@@ -433,7 +433,7 @@ class TwitchBot:
         self.GetUserAndBroadcasterId()
         self.setup_database_and_vectors()
         self.setup_timers()
-        self.get_my_emotes(self.chan)
+        self.get_all_emotes(self.chan)
         self.start_websocket_bot()
 
 
