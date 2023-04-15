@@ -70,40 +70,6 @@ def spacytokenize(text):
     doc = nlp(text)
     return [token.text for token in doc]
 
-def get_all_emotes(channelname):
-    global all_emotes
-    print("Getting emotes for 7tv, bttv, ffz")
-    response = requests.get(
-        f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv.bttv.ffz"
-    )
-    #emotes = json.loads(response.json(), object_hook=lambda d: SimpleNamespace(**d))
-    all_emotes = [emote["code"] for emote in response.json()]
-    all_emotes = [emote for emote in all_emotes if len(emote) >= 3]
-    
-    print("Getting emotes for twitch")
-    # Get emoticon set IDs for the channel
-    product_url = f'http://api.twitch.tv/api/channels/{channelname[1:]}/product'
-    headers = {
-        'Authorization': f'Bearer {self.auth}'
-    }
-
-    response = requests.get(product_url, headers=headers)
-    emoticon_sets = response.json()['emoticons']
-
-    # Get emote images using emoticon set IDs
-    emote_sets_list = ','.join([str(emote['emoticon_set']) for emote in emoticon_sets])
-    emote_images_url = f'https://api.twitch.tv/kraken/chat/emoticon_images?emotesets={emote_sets_list}'
-
-    response = requests.get(emote_images_url, headers=headers)
-    emote_images = response.json()['emoticon_sets']
-
-    # Print emote images
-    for emote_set in emote_images.values():
-        for emote in emote_set:
-            all_emotes.append(emote)
-
-    print(' '.join(all_emotes))
-
 def most_frequent(List):
     counter = 1
     if len(List) < 1:
@@ -208,7 +174,41 @@ class TwitchBot:
     global_index = None
     data_file = 'broke'
     index_file = 'index.ann'
-    
+
+    def get_all_emotes(self, channelname):
+        global all_emotes
+        print("Getting emotes for 7tv, bttv, ffz")
+        response = requests.get(
+            f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv.bttv.ffz"
+        )
+        #emotes = json.loads(response.json(), object_hook=lambda d: SimpleNamespace(**d))
+        all_emotes = [emote["code"] for emote in response.json()]
+        all_emotes = [emote for emote in all_emotes if len(emote) >= 3]
+        
+        print("Getting emotes for twitch")
+        # Get emoticon set IDs for the channel
+        product_url = f'http://api.twitch.tv/api/channels/{channelname[1:]}/product'
+        headers = {
+            'Authorization': f'Bearer {self.auth}'
+        }
+
+        response = requests.get(product_url, headers=headers)
+        emoticon_sets = response.json()['emoticons']
+
+        # Get emote images using emoticon set IDs
+        emote_sets_list = ','.join([str(emote['emoticon_set']) for emote in emoticon_sets])
+        emote_images_url = f'https://api.twitch.tv/kraken/chat/emoticon_images?emotesets={emote_sets_list}'
+
+        response = requests.get(emote_images_url, headers=headers)
+        emote_images = response.json()['emoticon_sets']
+
+        # Print emote images
+        for emote_set in emote_images.values():
+            for emote in emote_set:
+                all_emotes.append(emote)
+
+        print(' '.join(all_emotes))
+        
     def add_message_to_index(self, data_file, username, timestamp, message):
         doc = nlp(message)
         subjectNouns = [tok.text for tok in doc if ((tok.dep_ == "nsubj" or tok.dep_ == "pobj" or tok.dep_ == "acomp" or tok.pos_ == "NOUN") and tok.pos_ != 'PRON')]
@@ -347,7 +347,7 @@ class TwitchBot:
         self.read_settings()
         self.setup_database_and_vectors()
         self.setup_timers()
-        get_all_emotes(self.chan)
+        self.get_all_emotes(self.chan)
         self.start_websocket_bot()
 
 
