@@ -873,7 +873,7 @@ class TwitchBot:
         prompt += similar_message_prompt
         # Add the messages to the prompt
         for message in new_similar_messages:
-            prompt += f"{{message['user']}}: {message['message']}\n"
+            prompt += f"{{{message['user']}}}: {message['message']}\n"
 
         prompt += said_message_prompt
         for message in new_messages:
