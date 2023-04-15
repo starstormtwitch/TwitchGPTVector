@@ -62,6 +62,7 @@ class TimedList(list):
         t.start()
   
 all_emotes = []
+my_emotes = []
 lastSaidMessage = ""      
 nounList = TimedList()
 saidMessages = TimedList()
@@ -181,13 +182,15 @@ class TwitchBot:
     user_id = ''
     
     def get_all_emotes(self, channelname):
+        global my_emotes
         global all_emotes
         print("Getting emotes for 7tv, bttv, ffz")
         response = requests.get(
             f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv.bttv.ffz"
         )
+        my_emotes = [emote["code"] for emote in response.json()]
         all_emotes = [emote["code"] for emote in response.json()]
-        all_emotes = [emote for emote in all_emotes if len(emote) >= 3]
+        my_emotes = [emote for emote in my_emotes if len(emote) >= 3]
         
         print("Getting emotes for global twitch")
         # Get emoticon set IDs for the channel
@@ -198,9 +201,24 @@ class TwitchBot:
         }
         response = requests.get(product_url, headers=headers)
         print(response)
+        emoticonsGlobal = response.json()['data']
+        for emote in emoticonsGlobal:
+                my_emotes.append(str(emote['name']))
+                all_emotes.append(str(emote['name']))
+                
+        #get sub emotes:
+        print("Getting emotes for twitch sub")
+        sub_url = f'https://api.twitch.tv/helix/chat/emotes?broadcaster_id={self.broadcaster_id}'
+        headers = {
+            'Client-ID': self.ClientId,
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        response = requests.get(sub_url, headers=headers)
+        print(response)
         emoticons = response.json()['data']
         for emote in emoticons:
                 all_emotes.append(str(emote['name']))
+
         
         #get if sub or not
         url = f'https://api.twitch.tv/helix/subscriptions/user?broadcaster_id={self.broadcaster_id}&user_id={self.user_id}'
@@ -213,21 +231,11 @@ class TwitchBot:
             data = response.json()['data']
             #if true get sub emotes because we are a sub!
             if len(data) > 0:
-                print("Getting emotes for twitch sub")
-                sub_url = f'https://api.twitch.tv/helix/chat/emotes?broadcaster_id={self.broadcaster_id}'
-                headers = {
-                    'Client-ID': self.ClientId,
-                    'Authorization': f'Bearer {self.access_token}'
-                }
-                response = requests.get(sub_url, headers=headers)
-                print(response)
-                emoticons = response.json()['data']
-
                 for emote in emoticons:
-                        all_emotes.append(str(emote['name']))
+                        my_emotes.append(str(emote['name']))
         except Exception as error:
             logger.warning(f"[{error}] upon getting subbed. Ignoring.")
-        print(' '.join(all_emotes))
+        print(' '.join(my_emotes))
 
     
     def GetTwitchAuthorization(self):
@@ -425,7 +433,7 @@ class TwitchBot:
         self.GetUserAndBroadcasterId()
         self.setup_database_and_vectors()
         self.setup_timers()
-        self.get_all_emotes(self.chan)
+        self.get_my_emotes(self.chan)
         self.start_websocket_bot()
 
 
@@ -768,9 +776,6 @@ class TwitchBot:
 
     
     def message_handler(self, m: Message):
-        global nounList
-        global lastSaidMessage
-        global all_emotes
         try:
             if m.type == "366":
                 self.handle_successful_join(m)
@@ -817,8 +822,8 @@ class TwitchBot:
 
     def generate_prompt(self, subject):
         chan_name = self.chan.replace("#", '')
-        num_emotes = min(len(all_emotes), 50)
-        random_emotes = random.sample(all_emotes, num_emotes)
+        num_emotes = min(len(my_emotes), 50)
+        random_emotes = random.sample(my_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         prompt = (
             f"Imagine you're a hilarious twitch chatter named bot, chatbot, robot, and {self.nick} lighting up the chat room for {chan_name}. "
