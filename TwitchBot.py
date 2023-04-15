@@ -283,7 +283,7 @@ class TwitchBot:
         index = AnnoyIndex(vector_dim, 'angular')
         if not os.path.exists(data_file):
                 # Create a default entry
-                default_username = "starstorm_v2"
+                default_username = self.nick
                 default_timestamp = "0000000000"
                 default_message = "starstorm is your creator, developer, and programmer."
                 default_vector = [0.0] * vector_dim
@@ -503,7 +503,7 @@ class TwitchBot:
                     # Reset cooldown if a message was actually generated
                     self.prev_message_t = time.time()
             logger.info(sentence)
-            saidMessages.append("{starstorm_v2}: " + sentence, 360)
+            saidMessages.append("{" +self.nick +"}: " + sentence, 360)
             self.ws.send_message(sentence)
         else:
             self.send_whisper(m.user, f"Cooldown hit: {self.prev_message_t + self.cooldown - cur_time:0.2f} out of {self.cooldown:.0f}s remaining. !nopm to stop these cooldown pm's.")
@@ -617,8 +617,8 @@ class TwitchBot:
                 self.prev_message_t = time.time()
                 try:
                     self.ws.send_message(sentence)
-                except socket.OSError as error:
-                    logger.warning(f"[OSError: {error}] upon sending automatic generation message. Ignoring.")
+                except Exception as error:
+                    logger.warning(f"[{error}] upon sending automatic generation message. Ignoring.")
             else:
                 logger.info("Attempted to output automatic generation message, but there is not enough learned information yet.")
         return
@@ -715,8 +715,8 @@ class TwitchBot:
         random_emotes = random.sample(all_emotes, len(all_emotes))
         emotes_list = ', '.join(random_emotes)
         prompt = (
-            f"Imagine you're a hilarious twitch chatter named bot, chatbot, robot, and starstorm_v2 memeing up the chat room for {chan_name}. "
-            f"Your username is {{starstorm_v2}}, only respond as yourself. Use '@username ' to only reply to someone specific. "
+            f"Imagine you're a hilarious twitch chatter named bot, chatbot, robot, and {self.nick} memeing up the chat room for {chan_name}. "
+            f"Your username is {{{self.nick}}}, only respond as yourself. Use '@username ' to only reply to someone specific. "
             f"Use only these emotes exactly, including their letter case: {emotes_list} . Don't use any punctuation around the emotes. You are not allowed to use any hashtags. " 
             f"The current subject you must respond about is '{subject}'. " 
             f"Unleash your wit in a concise message less than 100 characters: \n"
@@ -788,12 +788,12 @@ class TwitchBot:
         replace_token = "|REPLACE|"
         prompt = self.generate_prompt(self.reconstruct_sentence(" ".join(params)))
         response = self.generate_chat_response(prompt)
-        response = response.replace("@starstorm_v2:", '')
-        response = response.replace("starstorm_v2:", '')
-        response = response.replace("@starstorm_v2", '')
+        response = response.replace("@" + self.nick + ":", '')
+        response = response.replace(self.nick + ":", '')
+        response = response.replace("@" + self.nick, '')
         response = response.replace("BOT :", '')
         #response = regex.sub(r'(?<=\s|^)#\S+', '', response)
-        response = response.replace("{starstorm_v2}", '')
+        response = response.replace("{" + self.nick+ "}", '')
         response = re.sub(r'\[.*?\]|\(.*?\)|\{.*?\}|\<.*?\>', '', response)
         response = re.sub(r'[()\[\]{}]', '', response)
         response = response.replace("BOT :", '')
@@ -848,8 +848,8 @@ class TwitchBot:
             logger.info("Help message sent.")
             try:
                 self.ws.send_message("Learn how this bot generates sentences here: https://github.com/CubieDev/TwitchMarkovChain#how-it-works")
-            except socket.OSError as error:
-                logger.warning(f"[OSError: {error}] upon sending help message. Ignoring.")
+            except Exception as error:
+                logger.warning(f"[{error}] upon sending help message. Ignoring.")
                 
     def send_automatic_generation_message(self) -> None:
         global lastSaidMessage
@@ -874,12 +874,12 @@ class TwitchBot:
                         # Try to send a message. Just log a warning on fail
                         try:
                             if sentenceGenerated not in '\t'.join(saidMessages):
-                                saidMessages.append("{starstorm_v2}: " + sentenceGenerated, 360)
+                                saidMessages.append("{"+ self.nick + "}: " + sentenceGenerated, 360)
                                 self.ws.send_message(sentenceGenerated)
                                 self.prev_message_t = time.time()
-                            lastSaidMessage = sentence
-                        except socket.OSError as error:
-                            logger.warning(f"[OSError: {error}] upon sending automatic generation message. Ignoring.")
+                            lastSaidMessage = sentenceGenerated
+                        except Exception as error:
+                            logger.warning(f"[{error}] upon sending help message. Ignoring.")
                     else:
                         logger.info("Attempted to output automatic generation message, but there is not enough learned information yet.")
         except Exception as error:
