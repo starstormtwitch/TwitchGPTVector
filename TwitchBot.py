@@ -16,7 +16,10 @@ import requests
 import spacy
 import openai
 import math
+import httpx
 import random
+from urllib.parse import urlencode
+from requests_oauthlib import OAuth2Session
 from flair.embeddings import Embeddings, DocumentPoolEmbeddings
 from flair.data import Sentence
 from torch import FloatTensor
@@ -168,46 +171,119 @@ def append_chat_data(data_file, username, timestamp, message, vector):
     with open(data_file, 'a', encoding='utf-8') as f:
         vector_str = ",".join(str(x) for x in vector)
         f.write(f"{timestamp}\t{username}\t{message}\t{vector_str}\n")
-        
+
 class TwitchBot:
-        
     global_index = None
     data_file = 'broke'
     index_file = 'index.ann'
-
+    access_token = ''
+    broadcaster_id = ''
+    user_id = ''
+    
     def get_all_emotes(self, channelname):
         global all_emotes
         print("Getting emotes for 7tv, bttv, ffz")
         response = requests.get(
             f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv.bttv.ffz"
         )
-        #emotes = json.loads(response.json(), object_hook=lambda d: SimpleNamespace(**d))
         all_emotes = [emote["code"] for emote in response.json()]
         all_emotes = [emote for emote in all_emotes if len(emote) >= 3]
         
-        print("Getting emotes for twitch")
+        print("Getting emotes for global twitch")
         # Get emoticon set IDs for the channel
-        product_url = f'http://api.twitch.tv/api/channels/{channelname[1:]}/product'
+        product_url = f'https://api.twitch.tv/helix/chat/emotes/global'
         headers = {
-            'Authorization': f'Bearer {self.auth}'
+            'Client-ID': self.ClientId,
+            'Authorization': f'Bearer {self.access_token}'
         }
-
         response = requests.get(product_url, headers=headers)
-        emoticon_sets = response.json()['emoticons']
+        print(response)
+        emoticons = response.json()['data']
+        for emote in emoticons:
+                all_emotes.append(str(emote['name']))
+        
+        #get if sub or not
+        url = f'https://api.twitch.tv/helix/subscriptions/user?broadcaster_id={self.broadcaster_id}&user_id={self.user_id}'
+        headers = {
+            'Client-ID': self.ClientId,
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        try:
+            response = httpx.get(url, headers=headers)
+            data = response.json()['data']
+            #if true get sub emotes because we are a sub!
+            if len(data) > 0:
+                print("Getting emotes for twitch sub")
+                sub_url = f'https://api.twitch.tv/helix/chat/emotes?broadcaster_id={self.broadcaster_id}'
+                headers = {
+                    'Client-ID': self.ClientId,
+                    'Authorization': f'Bearer {self.access_token}'
+                }
+                response = requests.get(sub_url, headers=headers)
+                print(response)
+                emoticons = response.json()['data']
 
-        # Get emote images using emoticon set IDs
-        emote_sets_list = ','.join([str(emote['emoticon_set']) for emote in emoticon_sets])
-        emote_images_url = f'https://api.twitch.tv/kraken/chat/emoticon_images?emotesets={emote_sets_list}'
-
-        response = requests.get(emote_images_url, headers=headers)
-        emote_images = response.json()['emoticon_sets']
-
-        # Print emote images
-        for emote_set in emote_images.values():
-            for emote in emote_set:
-                all_emotes.append(emote)
-
+                for emote in emoticons:
+                        all_emotes.append(str(emote['name']))
+        except Exception as error:
+            logger.warning(f"[{error}] upon getting subbed. Ignoring.")
         print(' '.join(all_emotes))
+
+    
+    def GetTwitchAuthorization(self):
+        client_id = self.ClientId
+        # Twitch OAuth URLs
+        redirect_uri = 'http://localhost:3000'
+        # Scopes that you want to request
+        scopes = ["chat:read", "chat:edit", "whispers:read", "whispers:edit", "user:read:subscriptions", "user_subscriptions", "moderation:read"]
+        authorization_base_url = f'https://id.twitch.tv/oauth2/?response_type=token&authorize?client_id={client_id}?redirect_uri={redirect_uri}?scope={scopes}'
+        
+        oauth = OAuth2Session(client_id, scope=scopes, redirect_uri=redirect_uri)
+        base_url = "https://id.twitch.tv/oauth2/authorize"
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": " ".join(scopes),
+            "response_type": "token",
+            "state": oauth._state,
+        }
+        authorization_url = f"{base_url}?{urlencode(params)}"
+
+        print("Visit the following URL to authorize your application, make sure it's for your bot:")
+        print(authorization_url)
+
+        # Step 2: User authorizes the application and provides the authorization code
+        authorization_code = input('Enter the authorization code from the url return http://localhost:3000/?code={CODEFROMEHERE}scope=whispers%3Aread+whispers%3Aedit&state=asdfasdfasdf: ')
+
+        # Now we can use the access token to authenticate API requests
+        return authorization_code
+
+    def GetUserAndBroadcasterId(self):
+        print("Getting user id")
+        user_id = ''
+        url = f'https://api.twitch.tv/helix/users?login={self.nick}'
+        headers = {
+            'Client-ID': self.ClientId,
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        response = httpx.get(url, headers=headers)
+        data = response.json()
+        if data['data']:
+            self.user_id = data['data'][0]['id']
+        else:
+            raise ValueError("could not pull userid") 
+
+        url = f'https://api.twitch.tv/helix/users?login={self.chan[1:]}'
+        headers = {
+            'Client-ID': self.ClientId,
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        response = httpx.get(url, headers=headers)
+        data = response.json()
+        if data['data']:
+            self.broadcaster_id = data['data'][0]['id']
+        else:
+            raise ValueError("could not pull broadcaster id") 
         
     def add_message_to_index(self, data_file, username, timestamp, message):
         doc = nlp(message)
@@ -345,6 +421,8 @@ class TwitchBot:
         self.initialize_variables()
         self.setup_mod_list_and_blacklist()
         self.read_settings()
+        self.access_token = self.GetTwitchAuthorization()
+        self.GetUserAndBroadcasterId()
         self.setup_database_and_vectors()
         self.setup_timers()
         self.get_all_emotes(self.chan)
@@ -373,6 +451,7 @@ class TwitchBot:
         self.chan = settings["Channel"]
         self.nick = settings["Nickname"]
         self.auth = settings["Authentication"]
+        self.ClientId = settings["ClientID"]
         self.denied_users = [user.lower() for user in settings["DeniedUsers"]] + [self.nick.lower()]
         self.allowed_users = [user.lower() for user in settings["AllowedUsers"]]
         self.cooldown = settings["Cooldown"]
@@ -415,19 +494,25 @@ class TwitchBot:
 
     def handle_successful_join(self, m):
         logger.info(f"Successfully joined channel: #{m.channel}")
-        logger.info("Fetching mod list...")
-        self.ws.send_message("/mods")
+##        logger.info("Fetching mod list...")
+##        headers = {
+##            "Authorization": f"Bearer {self.access_token}",
+##            "Client-Id": self.ClientId,
+##        }
+##
+##        response = requests.get(
+##            f"https://api.twitch.tv/helix/moderation/moderators?broadcaster_id={self.broadcaster_id}",
+##            headers=headers,
+##        )
+##        print(response.json())
+##        moderators = response.json()["data"]
+##        for mod in moderators:
+##            moderatorStringList.append(mod['user_name'])
+##            
+##        moderators = m.message.replace("The moderators of this channel are:", "").strip()
+##        self.mod_list = [m.channel] + moderatorStringList.split(", ")
+##        logger.info(f"Fetched mod list. Found {len(self.mod_list) - 1} mods.")
 
-    def handle_notice(self, m):
-        if m.message.startswith("The moderators of this channel are:"):
-            string_list = m.message.replace("The moderators of this channel are:", "").strip()
-            self.mod_list = [m.channel] + string_list.split(", ")
-            logger.info(f"Fetched mod list. Found {len(self.mod_list) - 1} mods.")
-        elif m.message == "There are no moderators of this channel.":
-            self.mod_list = [m.channel]
-            logger.info("Fetched mod list. Found no mods.")
-        else:
-            logger.info(m.message)
 
     def handle_enable_disable(self, m):
         if m.message.startswith("!enable") and self.check_if_permissions(m):
@@ -689,10 +774,7 @@ class TwitchBot:
         try:
             if m.type == "366":
                 self.handle_successful_join(m)
-
-            elif m.type == "NOTICE":
-                self.handle_notice(m)
-
+                
             elif m.type in ("PRIVMSG", "WHISPER"):
                 self.handle_enable_disable(m)
 
@@ -900,7 +982,10 @@ class TwitchBot:
                             if sentenceGenerated not in '\t'.join(saidMessages):
                                 saidMessages.append("{"+ self.nick + "}: " + sentenceGenerated, 360)
                                 self.ws.send_message(sentenceGenerated)
+                                logger.info("Said Message")
                                 self.prev_message_t = time.time()
+                            else:
+                                logger.info("Tried to say a message, but we saw it was said already")
                             lastSaidMessage = sentenceGenerated
                         except Exception as error:
                             logger.warning(f"[{error}] upon sending help message. Ignoring.")

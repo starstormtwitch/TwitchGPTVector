@@ -4,4 +4,6 @@ flair
 annoy
 requests
 spacy
+httpx
 openai
+requests requests-oauthlib

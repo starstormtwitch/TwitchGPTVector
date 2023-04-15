@@ -13,6 +13,7 @@ class SettingsData(TypedDict):
     Channel: str
     Nickname: str
     Authentication: str
+    ClientID: str
     OpenAIKey: str
     DeniedUsers: List[str]
     AllowedUsers: List[str]
@@ -32,7 +33,8 @@ class Settings:
         "Port": 6667,
         "Channel": "#StarStorm",
         "Nickname": "StarStorm_v2",
-        "Authentication": "{put your auth here}",
+        "Authentication": "{put your oauth here}",
+        "ClientID": "{go to https://dev.twitch.tv/console/apps/create and create an app}",
         "OpenAIKey": "{put your openai auth here}",
         "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],
         "AllowedUsers": ["StarStorm"],
