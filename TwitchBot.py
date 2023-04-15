@@ -672,7 +672,7 @@ class TwitchBot:
 
     def handle_conversation_info_gathering(self, m, cur_time):
         #add to context history
-        saidMessages.append("{"+m.user+"}: " +  m.message.lower(), 360)
+        saidMessages.append("{"+m.user+"}: " +  m.message, 360)
         
         #extract meaningful words from message
         sentence = m.message.lower().replace(self.nick.lower(), '').replace('bot', '')
