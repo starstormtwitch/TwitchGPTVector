@@ -382,7 +382,7 @@ class TwitchBot:
         index = AnnoyIndex(vector_dim, 'angular')
         if not os.path.exists(data_file):
                 # Create a default entry
-                default_username = self.nick
+                default_username = "{starstorm}: "
                 default_timestamp = "0000000000"
                 default_message = "starstorm is your creator, developer, and programmer."
                 default_vector = [0.0] * vector_dim
