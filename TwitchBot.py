@@ -72,13 +72,36 @@ def spacytokenize(text):
 
 def get_all_emotes(channelname):
     global all_emotes
-    print("Getting emotes from sources")
+    print("Getting emotes for 7tv, bttv, ffz")
     response = requests.get(
         f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv.bttv.ffz"
     )
     #emotes = json.loads(response.json(), object_hook=lambda d: SimpleNamespace(**d))
     all_emotes = [emote["code"] for emote in response.json()]
     all_emotes = [emote for emote in all_emotes if len(emote) >= 3]
+    
+    print("Getting emotes for twitch")
+    # Get emoticon set IDs for the channel
+    product_url = f'http://api.twitch.tv/api/channels/{channelname[1:]}/product'
+    headers = {
+        'Authorization': f'Bearer {self.auth}'
+    }
+
+    response = requests.get(product_url, headers=headers)
+    emoticon_sets = response.json()['emoticons']
+
+    # Get emote images using emoticon set IDs
+    emote_sets_list = ','.join([str(emote['emoticon_set']) for emote in emoticon_sets])
+    emote_images_url = f'https://api.twitch.tv/kraken/chat/emoticon_images?emotesets={emote_sets_list}'
+
+    response = requests.get(emote_images_url, headers=headers)
+    emote_images = response.json()['emoticon_sets']
+
+    # Print emote images
+    for emote_set in emote_images.values():
+        for emote in emote_set:
+            all_emotes.append(emote)
+
     print(' '.join(all_emotes))
 
 def most_frequent(List):
@@ -712,7 +735,7 @@ class TwitchBot:
 
     def generate_prompt(self, subject):
         chan_name = self.chan.replace("#", '')
-        num_emotes = min(len(all_emotes), 25)
+        num_emotes = min(len(all_emotes), 50)
         random_emotes = random.sample(all_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         prompt = (
@@ -732,7 +755,7 @@ class TwitchBot:
         new_similar_messages = []
 
         similar_message_prompt = "\nYou remember these old messages from the past, DO NOT REPLY to users from this list, and make sure that these inform your response:\n"
-        said_message_prompt = "\nThis is the current conversation, ordered from old to new messages, try to reply to a newer message from this list:\n"
+        said_message_prompt = "\nThis is the current conversation, ordered from old to new messages, try to reply to a bottom message from this list:\n"
 
         new_prompt = prompt
         new_prompt += similar_message_prompt
