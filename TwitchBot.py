@@ -712,7 +712,8 @@ class TwitchBot:
 
     def generate_prompt(self, subject):
         chan_name = self.chan.replace("#", '')
-        random_emotes = random.sample(all_emotes, len(all_emotes))
+        num_emotes = min(len(all_emotes), 25)
+        random_emotes = random.sample(all_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         prompt = (
             f"Imagine you're a hilarious twitch chatter named bot, chatbot, robot, and {self.nick} memeing up the chat room for {chan_name}. "
