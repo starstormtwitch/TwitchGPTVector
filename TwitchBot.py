@@ -382,7 +382,7 @@ class TwitchBot:
         index = AnnoyIndex(vector_dim, 'angular')
         if not os.path.exists(data_file):
                 # Create a default entry
-                default_username = "{starstorm}: "
+                default_username = "starstorm "
                 default_timestamp = "0000000000"
                 default_message = "starstorm is your creator, developer, and programmer."
                 default_vector = [0.0] * vector_dim
@@ -821,7 +821,7 @@ class TwitchBot:
         random_emotes = random.sample(all_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         prompt = (
-            f"Imagine you're a hilarious twitch chatter named bot, chatbot, robot, and {self.nick} memeing up the chat room for {chan_name}. "
+            f"Imagine you're a hilarious twitch chatter named bot, chatbot, robot, and {self.nick} lighting up the chat room for {chan_name}. "
             f"Your username is {{{self.nick}}}, only respond as yourself. Use '@username ' to only reply to someone specific. "
             f"Use only these emotes exactly, including their letter case: {emotes_list} . Don't use any punctuation around the emotes. You are not allowed to use any hashtags. " 
             f"The current subject you must respond about is '{subject}'. " 
@@ -868,7 +868,7 @@ class TwitchBot:
         prompt += similar_message_prompt
         # Add the messages to the prompt
         for message in new_similar_messages:
-            prompt += f"{message['user']}{message['message']}\n"
+            prompt += f"{{message['user']}}: {message['message']}\n"
 
         prompt += said_message_prompt
         for message in new_messages:
