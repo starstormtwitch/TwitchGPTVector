@@ -111,17 +111,14 @@ This bot is controlled by a `settings.json` file, which has the following struct
   "Channel": "#<channel>",
   "Nickname": "<name>",
   "Authentication": "oauth:<auth>",
+  "OpenAIKey": "auth>",
   "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],
   "AllowedUsers": [],
   "Cooldown": 20,
-  "KeyLength": 2,
-  "MaxSentenceWordAmount": 25,
-  "MinSentenceWordAmount": -1,
   "HelpMessageTimer": 18000,
   "AutomaticGenerationTimer": -1,
   "WhisperCooldown": true,
   "EnableGenerateCommand": true,
-  "SentenceSeparator": " - ",
   "AllowGenerateParams": true,
   "GenerateCommands": ["!generate", "!g"]
 }
@@ -134,6 +131,7 @@ This bot is controlled by a `settings.json` file, which has the following struct
 | `Channel`                  | The Channel that will be connected to.                                                                                                                                                                                                       | `"#Starstorm"`                                           |
 | `Nickname`                 | The Username of the bot account.                                                                                                                                                                                                             | `"Starstorm_v2"`                                            |
 | `Authentication`           | The OAuth token for the bot account.                                                                                                                                                                                                         | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
+| `OpenAIAuth`           | The authentication key for open ai. You will need to go to https://platform.openai.com/account/api-keys and create an account.                                                                                                                                                                                                         | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
 | `DeniedUsers`              | The list of (bot) accounts whose messages should not be learned from. The bot itself it automatically added to this.                                                                                                                         | `["StreamElements", "Nightbot", "Moobot", "Marbiebot"]` |
 | `AllowedUsers`             | A list of users with heightened permissions. Gives these users the same power as the channel owner, allowing them to bypass cooldowns, set cooldowns, disable or enable the bot, etc.                                                        | `["loltyler1", "starstorm"]`                                 |
 | `Cooldown`                 | A cooldown in seconds between successful generations. If a generation fails (eg inputs it can't work with), then the cooldown is not reset and another generation can be done immediately.                                                   | `20|
