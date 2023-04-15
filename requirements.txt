@@ -1,0 +1,7 @@
+TwitchWebsocket
+rake-nltk
+flair
+annoy
+requests
+spacy
+openai
