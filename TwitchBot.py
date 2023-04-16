@@ -836,6 +836,7 @@ class TwitchBot:
         similar_messages = self.find_similar_messages(subject, self.global_index, self.data_file, num_results=50)
 
         token_limit = 4096
+        token_limit = token_limit - (token_limit/4)
         reversed_messages = saidMessages[::-1]
         new_messages = []
         new_similar_messages = []
