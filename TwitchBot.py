@@ -317,7 +317,7 @@ class TwitchBot:
         # Close the existing index file before saving the new index
         self.global_index.unload()
 
-        new_index.build(50)
+        new_index.build(10)
         # Save the Annoy index to the index file
         if os.path.exists(self.index_file) and os.access(self.index_file, os.R_OK):
             # The file exists and is readable, so we can use it
@@ -703,7 +703,6 @@ class TwitchBot:
         for noun in nounListToAdd:
             for keyword in keywordListToAdd:
                 if noun in keyword:
-                    print(f'interesting noun:{noun}')
                     nounList.append(noun, 15)
                     interestingPhrase = sentence[sentence.lower().find(keyword):][:len(keyword)]
                     possible_response.append(interestingPhrase)
@@ -861,7 +860,7 @@ class TwitchBot:
             # Add a similar message if it doesn't exceed the token limit
             if similar_messages:
                 temp_similar_messages = [similar_messages[0]] + new_similar_messages
-                new_prompt = prompt + ''.join(f"{{{msg['user']}}}: {msg['message']}\n" for msg in new_messages + temp_similar_messages)
+                new_prompt = prompt + ''.join(f"{{{msg['user']}}}: {msg['message']}\n" for msg in new_similar_messages + temp_similar_messages)
                 token_count = len(spacytokenize(new_prompt))
                 if token_count > token_limit:
                     break
