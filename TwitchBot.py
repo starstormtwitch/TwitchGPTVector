@@ -861,7 +861,7 @@ class TwitchBot:
             # Add a similar message if it doesn't exceed the token limit
             if similar_messages:
                 temp_similar_messages = [similar_messages[0]] + new_similar_messages
-                new_prompt = prompt + ''.join(f"{msg}\n" for msg in new_messages + temp_similar_messages)
+                new_prompt = prompt + ''.join(f"{{{msg['user']}}}: {msg['message']}\n" for msg in new_messages + temp_similar_messages)
                 token_count = len(spacytokenize(new_prompt))
                 if token_count > token_limit:
                     break
