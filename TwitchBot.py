@@ -27,9 +27,6 @@ from torch import FloatTensor
 from Log import Log
 Log(__file__)
 
-question_words = ["what", "why", "when", "where", "how", "do", "does", 
-             "which", "could", "would", "whom", "whose", "?"]
-
 #you will probably need to download this model from spacy, you can also use whichever one you want here.
 nlp = spacy.load("en_core_web_sm")
 
@@ -67,9 +64,32 @@ lastSaidMessage = ""
 nounList = TimedList()
 saidMessages = TimedList()
 
-def is_question(sentence):
-    return any((x in sentence for x in question_words))
-    
+
+def is_information_question(sentence):
+    doc = nlp(sentence)
+
+    # Check for interrogative pronouns or adverbs
+    interrogative_pronouns = {"who", "whom", "whose", "which", "what"}
+    interrogative_adverbs = {"how", "where", "when", "why"}
+
+    for token in doc:
+        # If an interrogative pronoun or adverb is found
+        if token.text.lower() in interrogative_pronouns or token.text.lower() in interrogative_adverbs:
+            # Check if the next token is a verb in the imperative form
+            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
+            if next_token and next_token.pos_ == "VERB" and next_token.dep_ == "ROOT":
+                # The question is likely asking the bot to do something, so we return False
+                return False
+            else:
+                # The question is likely an informational question
+                return True
+
+        # If an auxiliary verb is found and its head is a verb, the sentence is likely a question
+        if token.dep_ == 'aux' and token.head.pos_ == 'VERB':
+            return True
+
+    return False
+
 def spacytokenize(text):
     doc = nlp(text)
     return [token.text for token in doc]
@@ -291,15 +311,33 @@ class TwitchBot:
         if data['data']:
             self.broadcaster_id = data['data'][0]['id']
         else:
-            raise ValueError("could not pull broadcaster id") 
+            raise ValueError("could not pull broadcaster id")
+        
+    def is_duplicate_entry(vector, existing_item_vectors, threshold=0.9):
+        nns = self.global_index.get_nns_by_vector(vector, 1, include_distances=True)
+        if nns:
+            closest_item, distance = nns[0]
+            return distance <= threshold
+        return False
         
     def add_message_to_index(self, data_file, username, timestamp, message):
         doc = nlp(message)
-        subjectNouns = [tok.text for tok in doc if ((tok.dep_ == "nsubj" or tok.dep_ == "pobj" or tok.dep_ == "acomp" or tok.pos_ == "NOUN") and tok.pos_ != 'PRON')]
+        
+        for tok in doc:
+            print(f"Token Text: {tok.text}, Dependency: {tok.dep_}, POS: {tok.pos_}")
+            
+        subjectNouns = [
+            tok.text
+            for tok in doc
+            if (tok.dep_ in ["nsubj", "pobj", "dobj", "acomp"]
+            and tok.pos_ != 'PRON')
+            or tok.pos_ in ['NOUN', 'PROPN']
+            or (tok.dep_ in ["PUNCT"] and tok.pos_ in ['punct'] and len(tok.text) >= 3)
+        ]
         subjectNouns.append(username)
         # Convert the chat message into a vector only keywords
         vector = message_to_vector(" ".join(subjectNouns))
-
+    
         # Append the new chat message to the chat data file
         append_chat_data(data_file, username, timestamp, message, vector)
 
@@ -307,6 +345,11 @@ class TwitchBot:
             self.global_index.get_item_vector(i)
             for i in range(self.global_index.get_n_items())
         ]
+        
+        # Check if the message is a duplicate before adding it to the index
+        if self.is_duplicate_entry(vector, existing_item_vectors):
+            return
+        
         # Add the new vector to the list of existing item vectors
         existing_item_vectors.append(vector)
 
@@ -329,7 +372,7 @@ class TwitchBot:
         # Load the new index into the global index
         self.global_index.load(self.index_file)
                 
-    def find_similar_messages(self, query, index, data_file, num_results=50):
+    def find_similar_messages(self, query, index, data_file, num_results=10):
         # Convert the query into a vector
         print(query)
         query_vector = message_to_vector(query)
@@ -371,7 +414,7 @@ class TwitchBot:
             if len(i.split()) <= 1:
                 continue
             params = tokenize(i)
-            sentence, success = self.generate(params)
+            sentence, success = self.generate(params, " ".join(params))
             if success:
                 return i
             else:
@@ -393,11 +436,47 @@ class TwitchBot:
                 default_username = "starstorm "
                 default_timestamp = "0000000000"
                 default_message = "starstorm is your creator, developer, and programmer."
-                default_vector = [0.0] * vector_dim
+                doc = nlp(default_message)
+                            
+                subjectNouns = [
+                    tok.text
+                    for tok in doc
+                    if (tok.dep_ in ["nsubj", "pobj", "acomp"]
+                    and tok.pos_ != 'PRON')
+                    or tok.pos_ in ['NOUN', 'PROPN']
+                    or (tok.dep_ in ["PUNCT"] and tok.pos_ in ['punct'] and len(tok.text) >= 3)
+                ]
+                subjectNouns.append(default_username)
+                # Convert the chat message into a vector only keywords
+                vector = message_to_vector(" ".join(subjectNouns))
 
                 # Add the default entry to the chat data file
-                append_chat_data(data_file, default_username, default_timestamp, default_message, default_vector)
+                append_chat_data(data_file, default_username, default_timestamp, default_message, vector)
 
+                #preload some data:
+                with open("C:\\Users\\Aaron Wilson\\Documents\\TwitchMarkovChain-master\\TwitchMarkovChain-master\\vectors_loltyler1.npy", "r") as file:
+                    for line in file:
+                        parts = line.strip().split("\t")
+                        if len(parts) == 4:
+                            username = parts[1].replace('{', '').replace('}', '').replace(':', '')
+                            message = parts[2]
+                            doc = nlp(message)
+                            print(f"preloading: {username} | {message}")
+                            
+                            subjectNouns = [
+                                tok.text
+                                for tok in doc
+                                if (tok.dep_ in ["nsubj", "pobj", "dobj", "acomp"]
+                                and tok.pos_ != 'PRON')
+                                or tok.pos_ in ['NOUN', 'PROPN']
+                                or (tok.dep_ in ["PUNCT"] and tok.pos_ in ['punct'] and len(tok.text) >= 3)
+                            ]
+                            subjectNouns.append(username)
+                            
+                            # Convert the chat message into a vector only keywords
+                            vector = message_to_vector(" ".join(subjectNouns))
+                            append_chat_data(data_file, username, default_timestamp, message, vector)
+                
                 print("Data file created with a default entry. An empty Annoy index will be created.")
                 
         if not os.path.exists(index_file):
@@ -614,7 +693,7 @@ class TwitchBot:
                 params = tokenize(m.message)[2:] if self.allow_generate_params else None
                 # Generate an actual sentence
                 print('responding')
-                sentence, success = self.generate(params)
+                sentence, success = self.generate(params, " ".join(params))
                 if success:
                     # Reset cooldown if a message was actually generated
                     self.prev_message_t = time.time()
@@ -683,15 +762,19 @@ class TwitchBot:
         saidMessages.append("{"+m.user+"}: " +  m.message, 360)
         
         #extract meaningful words from message
-        sentence = m.message.lower().replace(self.nick.lower(), '').replace('bot', '')
+        sentence = m.message.lower().replace("@"+self.nick.lower(), '').replace(self.nick.lower(), '').replace('bot', '')
         cleanedSentence = remove_list_from_string(all_emotes, sentence)
         doc = nlp(cleanedSentence)
+
+        is_interesting_message = False;
         subjectNouns = [
             tok.text
             for tok in doc
-            if tok.dep_ in ["nsubj", "pobj", "acomp"]
-            and tok.pos_ != 'PRON'
+            if (tok.dep_ in ["nsubj", "pobj", "dobj", "acomp"]
+            and tok.pos_ != 'PRON')
             or tok.pos_ in ['NOUN', 'PROPN']
+            or (tok.dep_ in ["amod"] and tok.pos_ in ['ADJ'])
+            or (tok.dep_ in ["punct"] and tok.pos_ in ['PUNCT'] and len(tok.text) >= 3)
         ]
         nounListToAdd = list(set(subjectNouns))
         rake_nltk_var.extract_keywords_from_text(sentence)
@@ -699,24 +782,37 @@ class TwitchBot:
             ' '.join(dict.fromkeys(keyword.split(" ")))
             for keyword in rake_nltk_var.get_ranked_phrases()
         ]
-        possible_response = []
+        # Initialize a counter for the number of nouns found in keywords
+        num_nouns_in_keywords = 0
+        #possible_response = []
         for noun in nounListToAdd:
             for keyword in keywordListToAdd:
                 if noun in keyword:
-                    nounList.append(noun, 15)
-                    interestingPhrase = sentence[sentence.lower().find(keyword):][:len(keyword)]
-                    possible_response.append(interestingPhrase)
-                    break
-            else:
-                possible_response.append(noun)
+                    nounList.append(noun, 30)
+                    #interestingPhrase = sentence[sentence.lower().find(keyword):][:len(keyword)]
+                    #possible_response.append(interestingPhrase)
+                    # Increment the counter if a noun is found in the keyword
+                    num_nouns_in_keywords += 1
+                    # If at least 2 nouns are found in the keywords, set is_interesting_message to True
+                    if num_nouns_in_keywords >= 3:
+                        is_interesting_message = True
+                        break
+            #else:
+                #possible_response.append(noun)
 
         #Generate response only if bot is mentioned, and not on cooldown
-        if (self.nick.lower() in m.message.lower() or "bot" in m.message.lower()) and self.prev_message_t + self.cooldown < cur_time:
+        if (self.nick.lower() in m.message.lower() or "bot " in m.message.lower()) and self.prev_message_t + self.cooldown < cur_time:
+            for tok in doc:
+                print(f"Token Text: {tok.text}, Dependency: {tok.dep_}, POS: {tok.pos_}")
             return self.RespondToMentionMessage(m, nounListToAdd, cleanedSentence)
+        elif is_interesting_message:
+            print(f"Adding interesting message to memory: {m.message}")
+            self.add_message_to_index(self.data_file, m.user.lower(), m.tags['tmi-sent-ts'], m.message)
 
     def RespondToMentionMessage(self, m, nounListToAdd, cleanedSentence):
         print('Answering to mention. ')
-        if not is_question(remove_list_from_string(all_emotes, m.message.lower())):
+        if not is_information_question(remove_list_from_string(all_emotes, m.message.lower())):
+            print(f"Saving interesting mention to history: {m.message}")
             self.add_message_to_index(self.data_file, m.user.lower(), m.tags['tmi-sent-ts'], m.message)
 
         if not nounListToAdd:
@@ -726,8 +822,8 @@ class TwitchBot:
 
         if self._enabled:
             params = tokenize(" ".join(nounListToAdd) if isinstance(nounListToAdd, list) else nounListToAdd)
-            sentence, success = self.generate(params)
-
+            sentence, success = self.generate(params, cleanedSentence)
+            saidMessages.append("{" +self.nick +"}: " + sentence, 360)
             if success:
                 self.prev_message_t = time.time()
                 try:
@@ -819,34 +915,35 @@ class TwitchBot:
 
         return reconstructed_sentence
 
-    def generate_prompt(self, subject):
+    def generate_prompt(self, subject, sentence) -> Tuple[str, str]:
+        system_prompt = ""
+        user_prompt = ""
+        
         chan_name = self.chan.replace("#", '')
         num_emotes = min(len(my_emotes), 50)
         random_emotes = random.sample(my_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         prompt = (
-            f"Imagine you're a hilarious twitch chatter named bot, chatbot, robot, and {self.nick} lighting up the chat room for {chan_name}. "
+            f"Imagine you're a hilarious twitch chatter named {self.nick} lighting up the chat room for {chan_name}. "
             f"Your username is {{{self.nick}}}, only respond as yourself. Use '@username ' to only reply to someone specific. "
-            f"Use only these emotes exactly, including their letter case: {emotes_list} . Don't use any punctuation around the emotes. You are not allowed to use any hashtags. " 
-            f"The current subject you must respond about is '{subject}'. " 
-            f"Unleash your wit in a concise message less than 100 characters: \n"
+            f"Do not reply to the streamer unless he talks to you directly. "
+            f"Here is the list of emotes that you can pull from for your reply, make sure to use the same letter case exactly: {emotes_list} . Don't use any punctuation around the emotes. YOU ARE NOT ALLOWED TO USE ANY HASHTAGS. " 
+            f"The current subject you must respond about is '{sentence}'. " 
         )
+        system_prompt += prompt;
 
         # Get similar messages from the database
-        similar_messages = self.find_similar_messages(subject, self.global_index, self.data_file, num_results=50)
+        similar_messages = self.find_similar_messages(subject, self.global_index, self.data_file, num_results=10)
 
-        token_limit = 4096
+        token_limit = 3000
         token_limit = token_limit - (token_limit/4)
         reversed_messages = saidMessages[::-1]
         new_messages = []
         new_similar_messages = []
 
-        similar_message_prompt = "\nYou remember these old messages from the past, DO NOT REPLY to users from this list, and make sure that these inform your response:\n"
-        said_message_prompt = "\nThis is the current conversation, ordered from old to new messages, try to reply to a bottom message from this list:\n"
+        similar_message_prompt = "\nYou remember these old related messages from the past, DO NOT REPLY to users from this list, but make sure that these inform your response:\n"
+        said_message_prompt = "\nHere is the current conversation, ordered from old to new messages:\n"
 
-        new_prompt = prompt
-        new_prompt += similar_message_prompt
-        new_prompt += said_message_prompt
         while True:
             # Add a message from the current conversation if it doesn't exceed the token limit
             if reversed_messages:
@@ -870,23 +967,27 @@ class TwitchBot:
                 similar_messages.pop(0)
             if not reversed_messages and not similar_messages:
                 break
-        prompt += similar_message_prompt
-        # Add the messages to the prompt
+        
+        system_prompt += similar_message_prompt
         for message in new_similar_messages:
-            prompt += f"{{{message['user']}}}: {message['message']}\n"
+            system_prompt += f"{{{message['user']}}}: {message['message']}\n"
 
-        prompt += said_message_prompt
+        user_prompt += said_message_prompt
         for message in new_messages:
-            prompt += f"{message}\n"
-
-        logger.info(prompt)
-        return prompt
+            user_prompt += f"{message}\n"
+        
+        user_prompt +=   f"Unleash your wit in a concise message less than 100 characters:"
+        
+        logger.info(system_prompt)
+        logger.info(user_prompt)
+        return system_prompt, user_prompt
                 
 
-    def generate_chat_response(self, message):
+    def generate_chat_response(self, system, message):
         
         response = openai.ChatCompletion.create(
             messages= [
+                {"role": "system", "content" : system},
                 {"role": "user", "content" : message}
                        ],
             model= "gpt-3.5-turbo"
@@ -894,11 +995,11 @@ class TwitchBot:
         logger.info(response)
         return response["choices"][0]["message"]["content"]
 
-    def generate(self, params: List[str] = None) -> "Tuple[str, bool]":
+    def generate(self, params: List[str] = None, sentence = None) -> "Tuple[str, bool]":
         #Cleaning up the message if there is some garbage that we generated
         replace_token = "|REPLACE|"
-        prompt = self.generate_prompt(self.reconstruct_sentence(" ".join(params)))
-        response = self.generate_chat_response(prompt)
+        system, prompt = self.generate_prompt(self.reconstruct_sentence(" ".join(params)), sentence)
+        response = self.generate_chat_response(system, prompt)
         response = response.replace("@" + self.nick + ":", '')
         response = response.replace(self.nick + ":", '')
         response = response.replace("@" + self.nick, '')
@@ -980,7 +1081,7 @@ class TwitchBot:
                 print(phraseToUse)
                 if phraseToUse is not None:
                     params = tokenize(phraseToUse)
-                    sentenceGenerated, success = self.generate(params)
+                    sentenceGenerated, success = self.generate(params, " ".join(params))
                     if success:
                         # Try to send a message. Just log a warning on fail
                         try:
