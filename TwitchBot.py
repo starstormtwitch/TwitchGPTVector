@@ -470,8 +470,10 @@ class TwitchBot:
         # Create a new list with strings instead of objects
         chat_strings = [f"{{{msg['user']}}}: {msg['message']}" for msg in chat_data]
 
+        print([f"{msg['distance']} | {{{msg['user']}}}: {msg['message']}" for msg in chat_data])
+        
         # Return the top num_results messages
-        return  chat_strings[:num_results]
+        return chat_strings[:num_results]
 
     def find_generate_success_list(self, List):
         if len(List) < 1:
@@ -506,7 +508,7 @@ class TwitchBot:
         else:
             glove_vocab = None
         
-        #get some data and train the fasttext embeddings model:
+        #get some data and train the fasttext embeddings model, make sure no entries are empty!:
         print(f"Reading data to train model...")
         sentences = []
         if os.path.exists(file_location):
@@ -515,10 +517,11 @@ class TwitchBot:
                     parts = line.strip().split("\t")
                     if len(parts) == 4:
                         username = parts[1].replace('{', '').replace('}', '').replace(':', '').replace("@", '')
-                        message = parts[2].replace('{', '').replace('}', '').replace(':', '').replace("@", '')
+                        message = parts[2].replace('{', '').replace('}', '').replace(':', '').replace("@" + self.nick.lower(), '').replace("@", '').replace(self.nick.lower(), '')
                         doc = nlp(message)
                         subjectNouns = []
-                        subjectNouns.append(username.strip().lower())
+                        if username.strip().lower() is not None:
+                            subjectNouns.append(username.strip().lower())
                         subjectNouns.extend([
                             tok.text.strip().lower()
                             for tok in doc
@@ -526,8 +529,10 @@ class TwitchBot:
                             and tok.pos_ != 'PRON')
                             or tok.pos_ in ['NOUN', 'PROPN']
                             or (tok.dep_ in ["PUNCT"] and tok.pos_ in ['punct'] and len(tok.text) >= 3)
+                            and tok.text.strip().lower() is not None  # Add this condition
                         ])
-                        sentences.append(subjectNouns);
+                        if subjectNouns and len(subjectNouns) > 1:
+                            sentences.append(subjectNouns);
         
         if len(sentences) > 0:
             # Train FastText model
@@ -546,13 +551,24 @@ class TwitchBot:
                 # Create a new KeyedVectors object
                 combined_model = KeyedVectors(vector_size=300)
 
-                # Add GloVe vectors to the new KeyedVectors object
-                combined_model.add_vectors(glove_model.index_to_key, glove_model.vectors)
-
-                # Add FastText vectors for OOV words to the new KeyedVectors object
+                # Filter FastText vectors for OOV words
                 oov_vectors = [(word, ft_model.wv[word]) for word in ft_model.wv.index_to_key if word not in glove_vocab]
-                oov_words, oov_vecs = zip(*oov_vectors)
-                combined_model.add_vectors(oov_words, np.vstack(oov_vecs))
+
+                # Combine GloVe vectors and FastText OOV vectors
+                combined_keys = glove_model.index_to_key + [word for word, _ in oov_vectors]
+                combined_vectors = np.vstack((glove_model.vectors, np.vstack([vec for _, vec in oov_vectors])))
+
+                #with open('words_in_model.txt', 'w', encoding='utf-8') as output_file:
+                #    for word, vec in zip(combined_keys, combined_vectors):
+                #        output_file.write(f"{word}: {vec[:3]} \n")
+
+                # Remove any None entries from combined_keys and their associated vectors in combined_vectors
+                valid_indices = [i for i, word in enumerate(combined_keys) if word is not None]
+                combined_keys = [word for word in combined_keys if word is not None]
+                combined_vectors = np.array([combined_vectors[i] for i in valid_indices])
+                            
+                # Add the combined vectors to the new KeyedVectors object
+                combined_model.add_vectors(combined_keys, combined_vectors)
 
                 return combined_model
             else:
@@ -566,13 +582,9 @@ class TwitchBot:
         index = AnnoyIndex(vector_dim, 'angular')
 
         #train the model now
-        fasttext_model = self.train_model(preload_vector_path)
-        #fasttext_model = self.train_model(data_file)
-
-        with open('words_in_model.txt', 'w', encoding='utf-8') as output_file:
-            for word in fasttext_model.key_to_index:
-                if word:
-                    output_file.write(word + '\n')
+        #fasttext_model = self.train_model(preload_vector_path)
+        fasttext_model = self.train_model(data_file)
+        
         print("Wrote words in model to file")
         
         if not os.path.exists(data_file):
@@ -735,7 +747,7 @@ class TwitchBot:
         if self.new_sentence_count >= retrain_threshold and not self.training:
             self.training = True
             self.new_sentence_count = 0
-            fasttext_model = self.train_model(data_file)
+            fasttext_model = self.train_model(self.data_file)
             # Load the Annoy index
             annoy_index = AnnoyIndex(300, 'angular')
             annoy_index.load(index_file)
@@ -1112,7 +1124,7 @@ class TwitchBot:
             f"Your username is {{{self.nick}}}, only respond as yourself. Use '@username ' when replying to someone . "
             f"Do not reply to the streamer unless he talks to you directly. "
             f"Here is the list of emotes that you can pull from for your reply, make sure to use the EXACT same letter case as it appears here: {emotes_list} . DO NOT use any punctuation around the emotes. YOU CAN NOT USE ANY HASHTAGS IN YOUR RESPONSE. " 
-            f"The current subject you must respond about is '{sentence}'. " 
+            f"The current subject you must respond to is '{sentence}'. " 
         )
         system_prompt += prompt;
 
@@ -1161,7 +1173,7 @@ class TwitchBot:
         for message in new_messages:
             user_prompt += f"{message}\n"
         
-        user_prompt +=   f"Unleash your wit in a concise message, ideally under 75 characters, but feel free to go longer:"
+        user_prompt +=   f"Unleash your wit in a concise message responding to the above, ideally under 75 characters, but feel free to go longer:"
 
         print(count_tokens(system_prompt))
         print(count_tokens(user_prompt))
