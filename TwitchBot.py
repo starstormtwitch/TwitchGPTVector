@@ -39,7 +39,7 @@ nlp = spacy.load("en_core_web_sm")
 glove_model_path = 'glove.840B.300d/glove.840B.300d.txt'
 
 #if you want to use an existing vector file in a different spot and retrain the vectors:
-preload_vector_path = "C:\\Users\\Aaron Wilson\\Documents\\TwitchMarkovChain-master\\TwitchMarkovChain-master\\vectors_loltyler1.npy"
+preload_vector_path = f"C:\\Users\\Aaron Wilson\\Documents\\TwitchMarkovChain-master\\TwitchMarkovChain-master\\vectors_loltyler1.npy"
 
 embedding_size = 300
 
@@ -57,19 +57,26 @@ my_emotes = []
 lastSaidMessage = ""      
 nounList = TimedList()
 saidMessages = TimedList()
-new_sentence_count = 0
 
-fasttext_model = FastText(vector_size=300, window=5, min_count=1, workers=-1, sg=1, epochs=10)
+fasttext_model = KeyedVectors(vector_size=300)
 
 # Create a character set with lowercase letters, digits, and some special characters
 char_set = string.ascii_lowercase + string.digits + "!@#$%^&*()_-+=<>?/|.,:;[]{}"
 char_to_index = {c: i for i, c in enumerate(char_set)}
 
 # Create a character embedding matrix
-char_embeddings = np.random.uniform(-0.1, 0.1, (len(char_set), embedding_size))
+char_embeddings_file = "char_embeddings.npy"
 
+# Load or create character embeddings
+if os.path.exists(char_embeddings_file):
+    char_embeddings = np.load(char_embeddings_file)
+else:
+    char_embeddings = np.random.uniform(-0.1, 0.1, (len(char_set), embedding_size))
+    np.save(char_embeddings_file, char_embeddings)
+    
 # Function to get character-level embeddings
 def word_to_char_vector(word):
+    print(f"Generating character embedding for word: {word}")
     word_vector = np.zeros((embedding_size,))
     for char in word.lower():
         if char in char_to_index:
@@ -80,6 +87,7 @@ def word_to_char_vector(word):
 
 def count_tokens(text):
     token_count = 0
+    
     alphanumeric_tokens = re.findall(r'\w+|[@#]\w+', text)
     special_tokens = re.findall(r'[^\w\s]', text)
     
@@ -204,17 +212,27 @@ def ttl_set_remove(my_set, item, ttl):
     my_set.remove(item)
         
 def message_to_vector(message):
+    global fasttext_model
+        
     words = message.split()
     sentence_vector = np.zeros(fasttext_model.vector_size)
     num_words = 0
     for word in words:
-        if word in fasttext_model.wv.key_to_index:
-            sentence_vector += fasttext_model.wv.get_vecattr(word)
+        word = word.strip().replace("@", '')
+        if word in fasttext_model.key_to_index:
+            sentence_vector += fasttext_model.get_vector(word)
             num_words += 1
         else:
-            # Use character-level embeddings for words not in model
-            sentence_vector += word_to_char_vector(word)
-            num_words += 1
+            # Find the matching key in the model
+            matching_keys = [w for w in fasttext_model.key_to_index if w is not None and w.lower() == word.lower()]
+            if len(matching_keys) > 0:
+                matched_key = matching_keys[0]  # Get the first matching key
+                sentence_vector += fasttext_model.get_vector(matched_key)
+                num_words += 1
+            else:
+                # Use character-level embeddings for words not in model
+                sentence_vector += word_to_char_vector(word)
+                num_words += 1
     if num_words > 0:
         sentence_vector /= num_words
     return sentence_vector
@@ -237,6 +255,8 @@ class TwitchBot:
     access_token = ''
     broadcaster_id = ''
     user_id = ''
+    new_sentence_count = 0
+    training = False
     
     def get_all_emotes(self, channelname):
         global my_emotes
@@ -369,14 +389,14 @@ class TwitchBot:
             #print(f"Token Text: {tok.text}, Dependency: {tok.dep_}, POS: {tok.pos_}")
         subjectNouns = []
         subjectNouns.append(username)
-        subjectNouns = [
+        subjectNouns.extend([
             tok.text
             for tok in doc
             if (tok.dep_ in ["nsubj", "pobj", "dobj", "acomp"]
             and tok.pos_ != 'PRON')
             or tok.pos_ in ['NOUN', 'PROPN']
             or (tok.dep_ in ["PUNCT"] and tok.pos_ in ['punct'] and len(tok.text) >= 3)
-        ]
+        ])
         # Convert the chat message into a vector only keywords
         subjectNounConcat = " ".join(subjectNouns)
         print(f"vectorizing for memory: {subjectNounConcat}")
@@ -420,6 +440,7 @@ class TwitchBot:
         # Convert the query into a vector
         print(query)
         query_vector = message_to_vector(query)
+        print(query_vector)
 
         # Get a larger number of nearest neighbors to filter later
         num_neighbors = num_results * 5
@@ -475,52 +496,84 @@ class TwitchBot:
         if phraseToUse is None:
             phraseToUse = self.find_generate_success_list(phraseList)
         return phraseToUse
-
+            
     def train_model(self, file_location):
         # Load GloVe model if specified
         if glove_model_path:
+            print(f"Loading in the pretrained model, this make take a long time, be patient!")
             glove_model = KeyedVectors.load_word2vec_format(glove_model_path, binary=False, no_header=True)
-            glove_vocab = set(glove_model.index2word)
+            glove_vocab = set(glove_model.index_to_key)
         else:
             glove_vocab = None
         
         #get some data and train the fasttext embeddings model:
-        print(f"Getting data to train model.")
+        print(f"Reading data to train model...")
         sentences = []
-        with open(file_location, "r", encoding='utf-8') as file:
-            for line in file:
-                parts = line.strip().split("\t")
-                if len(parts) == 4:
-                    username = parts[1].replace('{', '').replace('}', '').replace(':', '')
-                    message = parts[2]
-                    doc = nlp(message)
-                            
-                    subjectNouns = []
-                    subjectNouns.append(username)
-                    subjectNouns = [
-                        tok.text
-                        for tok in doc
-                        if (tok.dep_ in ["nsubj", "pobj", "dobj", "acomp"]
-                        and tok.pos_ != 'PRON')
-                        or tok.pos_ in ['NOUN', 'PROPN']
-                        or (tok.dep_ in ["PUNCT"] and tok.pos_ in ['punct'] and len(tok.text) >= 3)
-                    ]
-                    sentences.append(subjectNouns);
+        if os.path.exists(file_location):
+            with open(file_location, "r", encoding='utf-8') as file:
+                for line in file:
+                    parts = line.strip().split("\t")
+                    if len(parts) == 4:
+                        username = parts[1].replace('{', '').replace('}', '').replace(':', '').replace("@", '')
+                        message = parts[2].replace('{', '').replace('}', '').replace(':', '').replace("@", '')
+                        doc = nlp(message)
+                        subjectNouns = []
+                        subjectNouns.append(username.strip().lower())
+                        subjectNouns.extend([
+                            tok.text.strip().lower()
+                            for tok in doc
+                            if (tok.dep_ in ["nsubj", "pobj", "dobj", "acomp"]
+                            and tok.pos_ != 'PRON')
+                            or tok.pos_ in ['NOUN', 'PROPN']
+                            or (tok.dep_ in ["PUNCT"] and tok.pos_ in ['punct'] and len(tok.text) >= 3)
+                        ])
+                        sentences.append(subjectNouns);
         
-        # Train model
-        print(f"Training model.")
-        model = FastText(vector_size=300, window=5, min_count=1, workers=-1, sg=1, epochs=10)
-        if glove_vocab:
-            model.build_vocab(sentences)
-            model.intersect_word2vec_format(glove_model_path, binary=False, no_header=True, lockf=1.0)
+        if len(sentences) > 0:
+            # Train FastText model
+            print(f"Number of training sentences: {len(sentences)}")
+            print(f"Sample sentences: {sentences[:5]}")
+            print("Training model...")
+            ft_model = FastText(vector_size=300, window=5, min_count=1, workers=4, sg=1, epochs=10)
+            ft_model.build_vocab(sentences)
+            ft_model.train(sentences, total_examples=len(sentences), epochs=ft_model.epochs)
         else:
-            model.build_vocab(sentences)
-        model.train(sentences, total_examples=len(sentences), epochs=model.epochs)
-        
-        return model
+            print("No data available for training.")
+            ft_model = None
+
+        if glove_vocab:
+            if ft_model:
+                # Create a new KeyedVectors object
+                combined_model = KeyedVectors(vector_size=300)
+
+                # Add GloVe vectors to the new KeyedVectors object
+                combined_model.add_vectors(glove_model.index_to_key, glove_model.vectors)
+
+                # Add FastText vectors for OOV words to the new KeyedVectors object
+                oov_vectors = [(word, ft_model.wv[word]) for word in ft_model.wv.index_to_key if word not in glove_vocab]
+                oov_words, oov_vecs = zip(*oov_vectors)
+                combined_model.add_vectors(oov_words, np.vstack(oov_vecs))
+
+                return combined_model
+            else:
+                return glove_model
+        else:
+            return ft_model
 
     def setup(self, vector_dim, data_file, index_file, num_trees=10):
+        global fasttext_model
+        
         index = AnnoyIndex(vector_dim, 'angular')
+
+        #train the model now
+        fasttext_model = self.train_model(preload_vector_path)
+        #fasttext_model = self.train_model(data_file)
+
+        with open('words_in_model.txt', 'w', encoding='utf-8') as output_file:
+            for word in fasttext_model.key_to_index:
+                if word:
+                    output_file.write(word + '\n')
+        print("Wrote words in model to file")
         
         if not os.path.exists(data_file):
                 # Create a default entry
@@ -531,14 +584,14 @@ class TwitchBot:
                      
                 subjectNouns = []
                 subjectNouns.append(default_username)      
-                subjectNouns = [
+                subjectNouns.extend([
                     tok.text
                     for tok in doc
                     if (tok.dep_ in ["nsubj", "pobj", "acomp"]
                     and tok.pos_ != 'PRON')
                     or tok.pos_ in ['NOUN', 'PROPN']
                     or (tok.dep_ in ["PUNCT"] and tok.pos_ in ['punct'] and len(tok.text) >= 3)
-                ]
+                ])
                 # Convert the chat message into a vector only keywords
                 vector = message_to_vector(" ".join(subjectNouns))
 
@@ -555,18 +608,18 @@ class TwitchBot:
                             if len(parts) == 4:
                                 username = parts[1].replace('{', '').replace('}', '').replace(':', '')
                                 message = parts[2]
+                                message = message.lower().replace("@"+self.nick.lower(), '').replace(self.nick.lower(), '').replace('bot', '')
                                 doc = nlp(message)
-
                                 subjectNouns = []
                                 subjectNouns.append(username)
-                                subjectNouns = [
+                                subjectNouns.extend([
                                     tok.text
                                     for tok in doc
                                     if (tok.dep_ in ["nsubj", "pobj", "dobj", "acomp"]
                                     and tok.pos_ != 'PRON')
                                     or tok.pos_ in ['NOUN', 'PROPN']
                                     or (tok.dep_ in ["PUNCT"] and tok.pos_ in ['punct'] and len(tok.text) >= 3)
-                                ]
+                                ])
                                 
                                 # Convert the chat message into a vector only keywords
                                 vector = message_to_vector(" ".join(subjectNouns))
@@ -595,9 +648,6 @@ class TwitchBot:
             index.save(index_file)
         # Load the Annoy index from the saved file
         index.load(index_file)
-
-        #train the model now
-        self.train_model(data_file)
         
         return index
 
@@ -677,12 +727,15 @@ class TwitchBot:
                                   live=True)
         self.ws.start_bot()
 
-    def check_retrain_model(self, index_file, fasttext_model):
+    def check_retrain_model(self, index_file):
+        global fasttext_model
+        
         retrain_threshold = 1000
-        new_sentence_count += 1
-        if new_sentence_count >= retrain_threshold:
-            new_sentence_count = 0
-            self.train_model(data_file)
+        self.new_sentence_count += 1
+        if self.new_sentence_count >= retrain_threshold and not self.training:
+            self.training = True
+            self.new_sentence_count = 0
+            fasttext_model = self.train_model(data_file)
             # Load the Annoy index
             annoy_index = AnnoyIndex(300, 'angular')
             annoy_index.load(index_file)
@@ -700,6 +753,7 @@ class TwitchBot:
 
             # Save the updated Annoy index
             annoy_index.save(index_file)
+            self.training = False
 
     def handle_successful_join(self, m):
         logger.info(f"Successfully joined channel: #{m.channel}")
@@ -936,7 +990,7 @@ class TwitchBot:
             self.add_message_to_index(self.data_file, m.user.lower(), m.tags['tmi-sent-ts'], m.message)
 
         #possibly retrain model if enough stuff has been added:
-        self.check_retrain_model(self.index_file, fasttext_model)
+        self.check_retrain_model(self.index_file)
         
 
     def RespondToMentionMessage(self, m, nounListToAdd, cleanedSentence):
@@ -947,8 +1001,8 @@ class TwitchBot:
 
         if not nounListToAdd:
             nounListToAdd.append(cleanedSentence)
-
-        nounListToAdd.append(m.user.lower())
+        else:
+            nounListToAdd.insert(0, m.user.lower())
 
         if self._enabled:
             params = spacytokenize(" ".join(nounListToAdd) if isinstance(nounListToAdd, list) else nounListToAdd)
@@ -1066,7 +1120,7 @@ class TwitchBot:
         similar_messages = self.find_similar_messages(subject, self.global_index, self.data_file, num_results=30)
 
         token_limit = 4096
-        token_limit = token_limit - (token_limit/4)
+        token_limit = token_limit - (token_limit/2)
         reversed_messages = saidMessages[::-1]
         new_messages = []
         new_similar_messages = []
@@ -1108,6 +1162,9 @@ class TwitchBot:
             user_prompt += f"{message}\n"
         
         user_prompt +=   f"Unleash your wit in a concise message, ideally under 75 characters, but feel free to go longer:"
+
+        print(count_tokens(system_prompt))
+        print(count_tokens(user_prompt))
         
         logger.info(system_prompt)
         logger.info(user_prompt)
