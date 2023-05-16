@@ -39,7 +39,7 @@ nlp = spacy.load("en_core_web_sm")
 glove_model_path = 'glove.840B.300d/glove.840B.300d.txt'
 
 #if you want to use an existing vector file in a different spot and retrain the vectors:
-preload_vector_path = f"C:\\Users\\Aaron Wilson\\Documents\\TwitchMarkovChain-master\\TwitchMarkovChain-master\\vectors_loltyler1.npy"
+preload_vector_path = f""
 
 embedding_size = 300
 
@@ -374,12 +374,13 @@ class TwitchBot:
         nns = self.global_index.get_nns_by_vector(vector, 1, include_distances=True)
         if nns:
             closest_items, distances = nns
-            distance = distances[0]
-            if distance <= threshold:
-                print("Duplicate vector.")
-                return True
-            else:
-                return False
+            if len(distances) > 0:
+                distance = distances[0]
+                if distance <= threshold:
+                    print("Duplicate vector.")
+                    return True
+                else:
+                    return False
         return False
         
     def add_message_to_index(self, data_file, username, timestamp, message):
@@ -581,8 +582,9 @@ class TwitchBot:
         
         index = AnnoyIndex(vector_dim, 'angular')
 
-        #train the model now
+        #train the model off of some other vector file
         #fasttext_model = self.train_model(preload_vector_path)
+        #train the model now
         fasttext_model = self.train_model(data_file)
         
         print("Wrote words in model to file")
@@ -658,6 +660,8 @@ class TwitchBot:
 
             # Save the Annoy index to a file
             index.save(index_file)
+            index.unload()  # Explicitly unload the index to close the file
+            time.sleep(1)   # Add a short delay before loading the file again
         # Load the Annoy index from the saved file
         index.load(index_file)
         
@@ -993,7 +997,7 @@ class TwitchBot:
                 #possible_response.append(noun)
 
         #Generate response only if bot is mentioned, and not on cooldown
-        if (self.nick.lower() in m.message.lower() or "bot " in m.message.lower()) and self.prev_message_t + self.cooldown < cur_time:
+        if (self.nick.lower() in m.message.lower() or " bot " in m.message.lower()) and self.prev_message_t + self.cooldown < cur_time:
             #for tok in doc:
                 #print(f"Token Text: {tok.text}, Dependency: {tok.dep_}, POS: {tok.pos_}")
             return self.RespondToMentionMessage(m, nounListToAdd, "{" + m.user.lower() + "}: " + m.message.lower())
@@ -1002,7 +1006,8 @@ class TwitchBot:
             self.add_message_to_index(self.data_file, m.user.lower(), m.tags['tmi-sent-ts'], m.message)
 
         #possibly retrain model if enough stuff has been added:
-        self.check_retrain_model(self.index_file)
+        #retrain_thread = threading.Thread(target=self.check_retrain_model, args=(self.index_file,))
+        #retrain_thread.start()
         
 
     def RespondToMentionMessage(self, m, nounListToAdd, cleanedSentence):
@@ -1123,8 +1128,8 @@ class TwitchBot:
             f"Imagine you're a witty and mischievous twitch chatter named {self.nick} lighting up the chat room for {chan_name}. "
             f"Your username is {{{self.nick}}}, only respond as yourself. Use '@username ' when replying to someone . "
             f"Do not reply to the streamer unless he talks to you directly. "
-            f"Here is the list of emotes that you can pull from for your reply, make sure to use the EXACT same letter case as it appears here: {emotes_list} . DO NOT use any punctuation around the emotes. YOU CAN NOT USE ANY HASHTAGS IN YOUR RESPONSE. " 
-            f"The current subject you must respond to is '{sentence}'. " 
+            f"Here is the list of emotes that you can pull from for your reply, make sure to use the EXACT same letter case as it appears here: {emotes_list} . DO NOT use any punctuation around the emotes." 
+            f"The subject of your response must be '{sentence}'. \n" 
         )
         system_prompt += prompt;
 
@@ -1137,8 +1142,8 @@ class TwitchBot:
         new_messages = []
         new_similar_messages = []
 
-        similar_message_prompt = "\nYou remember these old related messages from the past, DO NOT REPLY to users from this list, but make sure that these inform your response:\n"
-        said_message_prompt = "\nHere is the current conversation, ordered from old to new messages:\n"
+        similar_message_prompt = "\n Here are some old messages from the past related to the subject. Make sure that they inform your response, BUT DO NOT REPLY TO MESSAGES FROM THIS LIST:\n"
+        said_message_prompt = "\n Here is the current conversation of the chat you are responding to, ordered from old to new messages:\n"
 
         token_count = 0
         while True:
@@ -1173,7 +1178,7 @@ class TwitchBot:
         for message in new_messages:
             user_prompt += f"{message}\n"
         
-        user_prompt +=   f"Unleash your wit in a concise message responding to the above, ideally under 75 characters, but feel free to go longer:"
+        user_prompt +=   f"Unleash your wit in a concise message, ideally under 60 characters, but feel free to go longer:"
 
         print(count_tokens(system_prompt))
         print(count_tokens(user_prompt))
