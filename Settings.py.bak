@@ -33,7 +33,7 @@ class Settings:
         "Port": 6667,
         "Channel": "#StarStorm",
         "Nickname": "StarStorm_v2",
-        "Authentication": "{put your twitch oauth here}",
+        "Authentication": "{put your oauth here}",
         "ClientID": "{go to https://dev.twitch.tv/console/apps/create and create an app}",
         "OpenAIKey": "{put your openai auth here}",
         "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],

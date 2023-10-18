@@ -21,3 +21,10 @@ class LoopingTimer(threading.Thread):
     def run(self):
         while not self.stopped.wait(self.interval):
             self.target(*self.args, **self.kwargs)
+            
+    def stop(self):
+        """
+        Stop the timer.
+        """
+        self.stopped.set()
+
