@@ -127,7 +127,7 @@ def most_frequent(items):
 # Regex pattern for stripping non-alphanumeric characters
 non_alphanumeric_pattern = re.compile(r'[^a-zA-Z0-9]')
 
-def remove_list(list_in, target):
+def remove_list_from_string(list_in, target):
     querywords = target.split()
     listLower = [x.lower() for x in list_in]
     resultwords = [word for word in querywords if word.lower() not in listLower]
