@@ -166,12 +166,6 @@ Words can also be added or removed from the blacklist via whispers, as is descri
 - [Python 3.6+](https://www.python.org/downloads/)
 - [Module requirements](requirements.txt)
   - Install these modules using `pip install -r requirements.txt` in the commandline.
-
-
---Additionally, you'll need to have the GPT model files and access to the Vector DB for the bot to function correctly.--
---whichever model you want from https://nlp.stanford.edu/projects/glove/--
---spacy en_core_web_sm--
-https://github.com/spotify/annoy
 ---
 
 Credits to CubieDev, this was originally his github project i repurposed: https://github.com/tomaarsen/TwitchMarkovChain
