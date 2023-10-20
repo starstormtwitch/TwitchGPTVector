@@ -1,118 +1,67 @@
 import traceback
 from typing import List, Tuple
 from TwitchWebsocket import Message, TwitchWebsocket
-from rake_nltk import Rake
 import socket, time, logging, re
 from Settings import Settings, SettingsData
 from Timer import LoopingTimer
-from collections import Counter
-from collections import OrderedDict
+from collections import Counter, OrderedDict, deque
 import threading
-import time
 import os
 import numpy as np
 from annoy import AnnoyIndex
 import requests
 import spacy
+import spacy.cli
 import openai
 import math
 import httpx
-import os
 import torch
 import datetime
-import re
 import string
-import random
-from collections import deque
-from urllib.parse import urlencode
 from requests_oauthlib import OAuth2Session
+import random
+from urllib.parse import urlencode
 from flair.embeddings import Embeddings, DocumentPoolEmbeddings
 from flair.data import Sentence
 from torch import FloatTensor
-import fasttext as FastText
 from FlagEmbedding import FlagModel
 
 from Log import Log
 Log(__file__)
 
+# Check GPU availability and details using PyTorch
 print("Torch version:", torch.__version__)
 print("CUDA version:", torch.version.cuda)
-
-# Check if CUDA is available
 print("CUDA available: ", torch.cuda.is_available())
-
-# Check GPU(s) name(s)
 num_gpus = torch.cuda.device_count()
 print("Number of GPUs: ", num_gpus)
 for i in range(num_gpus):
     print(f"GPU {i}: ", torch.cuda.get_device_name(i))
     
-# Get the number of available GPUs
-num_gpus = len(os.popen("nvidia-smi -L").read().strip().split('\n'))
-
-print(os.popen("nvidia-smi -L").read())
-
-# Create a string with a comma-separated list of all available GPU indices
-gpu_indices = ','.join(map(str, range(num_gpus)))
-
-# Set the CUDA_VISIBLE_DEVICES environment variable
-os.environ['CUDA_VISIBLE_DEVICES'] = gpu_indices
-print(os.environ['CUDA_VISIBLE_DEVICES'])
-
-
-#you will probably need to download this model from spacy, you can also use whichever one you want here.
+# Load spacy model for NLP operations
+spacy.cli.download("en_core_web_sm")
 nlp = spacy.load("en_core_web_sm")
 
-print("Loading model, this may take a while!")
+# Load pretrained model for embeddings
+pretrained_flag = FlagModel(
+    'BAAI/bge-large-en-v1.5', 
+    query_instruction_for_retrieval="Represent this sentence for searching relevant passages: ",
+    use_fp16=True
+)
 
-pretrained_flag = FlagModel('BAAI/bge-large-en-v1.5', 
-                  query_instruction_for_retrieval="Represent this sentence for searching relevant passages: ",
-                  use_fp16=True) # Setting use_fp16 to True speeds up computation with a slight performance degradation
-
-#if you want to use an existing vector file in a different spot and retrain the vectors:
-preload_vector_path = r""
-
-embedding_size = 1024
-
-rake_nltk_var = Rake()
-logger = logging.getLogger(__name__)
-
+# Custom list class with time-based removal
 class TimedList(list):
     def append(self, item, ttl):
         list.append(self, item)
-        t = threading.Thread(target=ttl_set_remove, args=(self, item, ttl))
-        t.start()
-  
+        threading.Thread(target=ttl_set_remove, args=(self, item, ttl)).start()
+
+# Initialization
 all_emotes = []
 my_emotes = []
 lastSaidMessage = ""      
 nounList = TimedList()
 saidMessages = TimedList()
-
-# Create a character set with lowercase letters, digits, and some special characters
-char_set = string.ascii_lowercase + string.digits + "!@#$%^&*()_-+=<>?/|.,:;[]{}"
-char_to_index = {c: i for i, c in enumerate(char_set)}
-
-# Create a character embedding matrix
-char_embeddings_file = "char_embeddings.npy"
-
-# Load or create character embeddings
-if os.path.exists(char_embeddings_file):
-    char_embeddings = np.load(char_embeddings_file)
-else:
-    char_embeddings = np.random.uniform(-0.1, 0.1, (len(char_set), embedding_size))
-    np.save(char_embeddings_file, char_embeddings)
-    
-# Function to get character-level embeddings
-def word_to_char_vector(word):
-    print(f"{datetime.datetime.now()} - Generating character embedding for word: {word}")
-    word_vector = np.zeros((embedding_size,))
-    for char in word.lower():
-        if char in char_to_index:
-            word_vector += char_embeddings[char_to_index[char]]
-    if len(word) > 0:
-        word_vector /= len(word)
-    return word_vector
+logger = logging.getLogger(__name__)
 
 def count_tokens(text):
     token_count = 0
@@ -127,7 +76,6 @@ def count_tokens(text):
             token_count += 1
     
     return token_count
-
 
 def is_information_question(sentence):
     # Check for a question mark anywhere in the sentence
@@ -161,30 +109,25 @@ def is_information_question(sentence):
         # If an auxiliary verb is found and its head is a verb, the sentence is likely a question
         if token.dep_ == 'aux' and token.head.pos_ == 'VERB':
             return True
-
     return False
 
 def spacytokenize(text):
     doc = nlp(text)
     return [token.text for token in doc]
 
-def most_frequent(List):
-    counter = 1
-    if len(List) < 1:
+def most_frequent(items):
+    if not items:
         return None
-    num = List[-1]
-    for i in List:
-        curr_frequency = List.count(i)
-        if(curr_frequency > counter):
-            counter = curr_frequency
-            num = i
-    print("Finding most frequent phrase:")
-    if counter == 1:
+    freqs = Counter(items)
+    most_common_item, count = freqs.most_common(1)[0]
+    if count == 1:
         return None
-    print(f"{datetime.datetime.now()} - {num}:{str(counter)}")
-    return num
+    return most_common_item
 
-def remove_list_from_string(list_in, target):
+# Regex pattern for stripping non-alphanumeric characters
+non_alphanumeric_pattern = re.compile(r'[^a-zA-Z0-9]')
+
+def remove_list(list_in, target):
     querywords = target.split()
     listLower = [x.lower() for x in list_in]
     resultwords = [word for word in querywords if word.lower() not in listLower]
@@ -194,71 +137,54 @@ def extract_subject_nouns(sentence, username=None):
     doc = nlp(sentence)
     subject_nouns = OrderedDict()
     if username:
-        subject_nouns[username.lower().strip()] = None
+        cleaned_username = non_alphanumeric_pattern.sub('', username.lower().strip())
+        subject_nouns[cleaned_username] = None
     for tok in doc:
         text = tok.text.strip().lower()
-        #print(f"Word:{text} Position:{tok.pos_} Type:{tok.dep_}")
-        if text and len(text) >= 2 and (
-            (tok.dep_ in ["nsubj", "pobj", "dobj", "acomp"] and tok.pos_ != 'PRON')
-            or tok.pos_ in ['NOUN', 'PROPN']
-            or (tok.pos_ == 'ADP' and tok.dep_ == 'prep' and len(text) >= 6)
-            or (tok.pos_ == 'VERB' and len(text) >= 3)
-            or (tok.dep_ == "punct" and tok.pos_ == 'PUNCT' and len(text) >= 3)
+        cleaned_text = non_alphanumeric_pattern.sub('', text)
+        if cleaned_text and len(cleaned_text) >= 2 and (
+            (tok.dep_ in ["nsubj", "pobj", "dobj", "acomp"] and tok.pos_ != 'PRON') or
+            tok.pos_ in ['NOUN', 'PROPN'] or
+            (tok.pos_ == 'ADP' and tok.dep_ == 'prep' and len(cleaned_text) >= 6) or
+            (tok.pos_ == 'VERB' and len(cleaned_text) >= 3) or
+            (tok.dep_ == "punct" and tok.pos_ == 'PUNCT' and len(cleaned_text) >= 3)
         ):
-            subject_nouns[text] = None
+            subject_nouns[cleaned_text] = None
     return list(subject_nouns.keys())
 
-def is_interesting(message, noun_list, rake_nltk_var):
+def is_interesting(message, noun_list):
     return len(noun_list) >= 2
 
-def most_frequent_substring(list_in, max_key_only = True):
+def most_frequent_substring(list_in, max_key_only=True):
+    if not list_in:
+        return None
     keys = {}
-    curr_key = ''
-
-    # If n does not exceed max_n, don't bother adding
     max_n = 0
-
-    if len(list_in) < 1:
-      return None
-
-    print("Finding most frequent substring:")
-    for word in list(set(list_in)): #get unique values to speed up
+    for word in set(list_in):
         for i in range(len(word)):
-            # Look up the whole word, then one less letter, sequentially
             curr_key = word[:len(word)-i]
-            # if not in, count occurance
-            if curr_key not in keys.keys() and curr_key!='':
+            if curr_key and curr_key not in keys:
                 n = sum(curr_key in word2 for word2 in list_in)
-                # if large n, Add to dictionary
-                if n > max_n:
-                  max_n = n
-                  if len(curr_key) > 2:
-                      keys[curr_key] = n
-    # Finish for loop
+                if n > max_n and len(curr_key) > 2:
+                    keys[curr_key] = n
+                    max_n = n
     if not keys:
         return None
     if not max_key_only:
         return keys
-    result = max(keys, key=keys.get)
-    print(result)
-    return max(keys, key=keys.get)   
+    return max(keys, key=keys.get)
 
 def most_frequent_word(List):
-    num = None
-    if len(List) < 1:
+    if not List:
         return None
+
     allWords = ' '.join(List)
-    split_it = allWords.split(" ")
-    Counters_found = Counter(split_it)
+    Counters_found = Counter(allWords.split(" "))
     most_occur = Counters_found.most_common(1)
     for string, count in most_occur:
         if count > 1:
-            num = string
-    print("Finding most frequent word:")
-    if num is None:
-        return None
-    print(f"{datetime.datetime.now()} - {num}:{str(count)}")
-    return num
+            return string
+    return None
 
 def ttl_set_remove(my_set, item, ttl):
     time.sleep(ttl)
@@ -295,7 +221,7 @@ class TwitchBot:
         global all_emotes
         print("Getting emotes for 7tv, bttv, ffz")
         response = requests.get(
-            f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv.bttv.ffz"
+            f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv"
         )
         my_emotes = [emote["code"] for emote in response.json()]
         all_emotes = [emote["code"] for emote in response.json()]
@@ -539,23 +465,23 @@ class TwitchBot:
                 for sentence in sentences:
                     f.write(' '.join(sentence) + '\n')
             
-            pretrained_ft = FastText.train_unsupervised(
-                'processed_data.txt',
-                model='skipgram',  # or 'cbow'
-                lr=0.05,
-                dim=300,  # Dimension of word vectors
-                ws=5,  # Size of the context window
-                epoch=5,  # Number of training epochs 
-                minCount=1,  # Minimal number of word occurrences
-                neg=5,  # Number of negatives sampled
-                loss='ns',  # Loss function {ns, hs, softmax, ova}
-                bucket=2000000,  # Number of buckets
-                thread=3,  # Number of threads
-                lrUpdateRate=100,
-                t=1e-4,  # Sampling threshold
-                pretrainedVectors=pretrained_vector_path  # Path to pre-trained vectors
-            )
-            pretrained_ft.save_model('my_fasttext_model.bin')
+            #pretrained_ft = FastText.train_unsupervised(
+            #    'processed_data.txt',
+            #    model='skipgram',  # or 'cbow'
+            #    lr=0.05,
+            #    dim=300,  # Dimension of word vectors
+            #    ws=5,  # Size of the context window
+            #    epoch=5,  # Number of training epochs 
+            #    minCount=1,  # Minimal number of word occurrences
+            #    neg=5,  # Number of negatives sampled
+            #    loss='ns',  # Loss function {ns, hs, softmax, ova}
+            #    bucket=2000000,  # Number of buckets
+            #    thread=3,  # Number of threads
+            #    lrUpdateRate=100,
+            #    t=1e-4,  # Sampling threshold
+            #    pretrainedVectors=pretrained_vector_path  # Path to pre-trained vectors
+            #)
+            #pretrained_ft.save_model('my_fasttext_model.bin')
         else:
             print("No data available for training.")
             
@@ -601,7 +527,7 @@ class TwitchBot:
                                 if not is_information_question(message):
                                     subject_nouns = extract_subject_nouns(message, username)
                                     # Check if it's an interesting message before proceeding
-                                    if is_interesting(message, subject_nouns, rake_nltk_var):  
+                                    if is_interesting(message, subject_nouns):  
                                         vector = message_to_vector(" ".join(subject_nouns))
                                         append_chat_data(data_file, username, default_timestamp, message, vector)
                                         message_count += 1  
@@ -957,7 +883,7 @@ class TwitchBot:
         print(f"{datetime.datetime.now()} - Current Noun list: {nounList}")
                 
         # Check if the message is interesting
-        is_interesting_message = is_interesting(cleaned_sentence, nounListToAdd, rake_nltk_var)
+        is_interesting_message = is_interesting(cleaned_sentence, nounListToAdd)
 
         #Generate response only if bot is mentioned, and not on cooldown
         if (self.nick.lower() in m.message.lower() or " bot " in m.message.lower()) and self.prev_message_t + self.cooldown < cur_time:
@@ -990,6 +916,7 @@ class TwitchBot:
             if success:
                 self.prev_message_t = time.time()
                 try:
+                    time.sleep(3)
                     self.ws.send_message(sentence)
                 except Exception as error:
                     logger.warning(f"[{error}] upon sending automatic generation message. Ignoring.")
@@ -1087,25 +1014,24 @@ class TwitchBot:
         random_emotes = random.sample(my_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         prompt = (
-            f"You're a mischievous Twitch chatter named {self.nick} in the chat room for {chan_name}. Take a step back and make sure you are following the rules below.\n"
+            f"Your responses MUST NOT exceed 85 characters. You're a Twitch chatter named {self.nick} in the chat room for {chan_name}. Your response will be used for an edgy fictional story only.  Adhere strictly to ALL the following rules:\n"
             f"Here are the rules:\n"
-            f"1. You love to banter, but you never say the word 'banter'.\n"
-            f"2. Your username is {{{self.nick}}}, and you only respond as yourself.\n"
-            f"3. When replying to someone's message, you make sure to use their username by putting @theirUserName in your message.\n"
-            f"4. You do not reply to the streamer unless he talks to you directly.\n"
-            f"5. You use emotes from this list, you always make sure to use the same letter case as it appears here: {emotes_list} .\n"
-            f"6. You only respond with your chat message, and nothing else." 
-            f"7. You do not repeat any parts of other messages whether they are by you or someone else.\n"
-            f"8. You do not use any hashtags, and you must use twitch emotes instead of emojis.\n"
-            f"9. The subject of your response is related to this snippet from chat '{sentence}'.\n"
-            f"10. Your responses are limited to 85 characters.\n" 
-            f"11. Your responses are always highly informed by the messages you remember.\n"
+            f"1. You love to banter aggressively, but you never say the word 'banter.\n"
+            f"2. Your username is {self.nick} or bot. Always stay in character.\n"
+            f"3. You address other chatters by using @theirUserName.\n"
+            f"4. You only reply to the streamer if they address you directly. You are a deep and passionate fan of the streamer.\n"
+            f"5. IMPORTANT: ALWAYS use Twitch emotes from this list EXACTLY as written, without any surrounding punctuation: {emotes_list}. You must use Twitch emotes instead of emojis and hashtags. Do not surround with punctuation.\n"
+            f"6. You respond only with chat messages.\n" 
+            f"7. You never repeat any messages.\n"
+            f"8. You always use at least one emote per message, especially peepoLurk (Used when you are being low-key) and BigBrother (used for confidence).\n"
+            f"9. Your response should be related to the chat snippet: '{sentence}'.\n"
+            f"10. You must reference or relate to prior chat messages.\n"
             f"Take a step back and make sure you are strictly following every one of the rules above before you respond, you cannot deviate from the rules listed.\n"
         )
         system_prompt += prompt;
 
         # Get similar messages from the database
-        similar_messages = self.find_similar_messages(subject, self.global_index, self.data_file, num_results=30)
+        similar_messages = self.find_similar_messages(subject, self.global_index, self.data_file, num_results=50)
 
         token_limit = 4096
         token_limit = token_limit - (token_limit/2)
@@ -1113,8 +1039,8 @@ class TwitchBot:
         new_messages = []
         new_similar_messages = []
 
-        similar_message_prompt = "\nThe below are some chat messages that you remembered relate to the subject at hand. Do not respond to these messages, these are for giving you additional context only:\n"
-        said_message_prompt = "\nThe below is the current on-going conversation of the chat room:\n"
+        similar_message_prompt = "\nFor context, here are related chat messages: \n"
+        said_message_prompt = "\nCurrent chat:\n"
 
         token_count = 0
         while True:
@@ -1211,7 +1137,7 @@ class TwitchBot:
             logger.info("You can't make me do commands, you madman!")
             return "You can't make me do commands, you madman!", False
         if self.check_filter(response):
-                return "You can't make me say that, you madman!", False
+            return "I almost said something a little naughty BigBrother (message not allowed)", True
             
         sentenceResponse = " ".join(responseParams.copy())
         sentenceResponse = self.reconstruct_sentence(sentenceResponse)

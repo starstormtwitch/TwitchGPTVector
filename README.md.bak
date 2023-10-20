@@ -111,7 +111,7 @@ This bot is controlled by a `settings.json` file, which has the following struct
   "Channel": "#<channel>",
   "Nickname": "<name>",
   "Authentication": "oauth:<auth>",
-  "OpenAIKey": "auth>",
+  "OpenAIKey": "<twitchoauth>",
   "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],
   "AllowedUsers": [],
   "Cooldown": 20,
@@ -132,7 +132,7 @@ This bot is controlled by a `settings.json` file, which has the following struct
 | `Nickname`                 | The Username of the bot account.                                                                                                                                                                                                             | `"Starstorm_v2"`                                            |
 | `Authentication`           | The OAuth token for the bot account.                                                                                                                  | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
 | `ClientID`                 | The authentication key for pulling emotes, and other things we can't do without registering with twitch. You will need to go to https://dev.twitch.tv/console/apps/create and create a application.                                                                                                               | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |                                                                                                                                                                                             | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
-| `OpenAIAuth`               | The authentication key for open ai. You will need to go to https://platform.openai.com/account/api-keys and create an account.                                                                                                                                                                                                         | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
+| `OpenAIAuth`               | The authentication key for open ai. You will need to go to https://platform.openai.com/account/api-keys and create an account.                                                                                                                                                                                                         | `"asdfasdfasdf"`                |
 | `DeniedUsers`              | The list of (bot) accounts whose messages should not be learned from. The bot itself it automatically added to this.                                                                                                                         | `["StreamElements", "Nightbot", "Moobot", "Marbiebot"]` |
 | `AllowedUsers`             | A list of users with heightened permissions. Gives these users the same power as the channel owner, allowing them to bypass cooldowns, set cooldowns, disable or enable the bot, etc.                                                        | `["loltyler1", "starstorm"]`                                 |
 | `Cooldown`                 | A cooldown in seconds between successful generations. If a generation fails (eg inputs it can't work with), then the cooldown is not reset and another generation can be done immediately.                                                   | `20|
