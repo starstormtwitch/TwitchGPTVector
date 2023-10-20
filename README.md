@@ -164,6 +164,7 @@ Words can also be added or removed from the blacklist via whispers, as is descri
 ## Requirements
 
 - [Python 3.6+](https://www.python.org/downloads/)
+- [pip](https://pip.pypa.io/en/stable/installation/)
 - [Module requirements](requirements.txt)
   - Install these modules using `pip install -r requirements.txt` in the commandline.
 ---
