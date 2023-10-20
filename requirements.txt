@@ -1,9 +1,19 @@
 TwitchWebsocket
-rake-nltk
-flair
+socket
+time
+logging
+re
+numpy
 annoy
 requests
 spacy
-httpx
 openai
-requests requests-oauthlib
+math
+httpx
+torch
+datetime
+string
+requests_oauthlib
+random
+urllib
+flair
