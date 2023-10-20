@@ -4,6 +4,12 @@ Twitch Bot for generating messages based on GPT models and VectorDB
 
 ---
 
+## What's new
+
+No longer need to download the models yourself, should download them on startup
+
+---
+
 ## Explanation
 
 When the bot starts, it listens to chat messages in the channel listed in the settings.json file. It learns from any chat message that is talking directly to the bot and that is not a question. When someone requests a message to be generated, a GPT model using VectorDB will generate a sentence based on the learned data. Note that the bot is unaware of the meaning of any of its inputs and outputs. This means it can use bad language if it was taught to use bad language by people in chat. You can add a list of banned words it should never learn or say. Use at your own risk.
@@ -160,12 +166,6 @@ Words can also be added or removed from the blacklist via whispers, as is descri
 - [Python 3.6+](https://www.python.org/downloads/)
 - [Module requirements](requirements.txt)
   - Install these modules using `pip install -r requirements.txt` in the commandline.
-
-
-Additionally, you'll need to have the GPT model files and access to the Vector DB for the bot to function correctly.
-whichever model you want from https://nlp.stanford.edu/projects/glove/
-spacy en_core_web_sm
-https://github.com/spotify/annoy
 ---
 
 Credits to CubieDev, this was originally his github project i repurposed: https://github.com/tomaarsen/TwitchMarkovChain
