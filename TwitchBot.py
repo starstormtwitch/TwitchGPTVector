@@ -125,7 +125,7 @@ def most_frequent(items):
     return most_common_item
 
 # Regex pattern for stripping non-alphanumeric characters
-non_alphanumeric_pattern = re.compile(r'[^a-zA-Z0-9]')
+non_alphanumeric_pattern = re.compile(r'[^a-zA-Z0-9_]')
 
 def remove_list_from_string(list_in, target):
     querywords = target.split()
@@ -345,12 +345,12 @@ class TwitchBot:
     def add_message_to_index(self, data_file, username, timestamp, message, nounListToAdd):
         # Check if nounListToAdd is empty
         if not nounListToAdd:
-            print(f"{datetime.datetime.now()} - No nouns to add, exiting function")
+            #print(f"{datetime.datetime.now()} - No nouns to add, exiting function")
             return
     
         # Convert the chat message into a vector only keywords
         subjectNounConcat = " ".join(nounListToAdd)
-        print(f"{datetime.datetime.now()} - vectorizing for memory: {subjectNounConcat}")
+        #print(f"{datetime.datetime.now()} - vectorizing for memory: {subjectNounConcat}")
         vector = message_to_vector(subjectNounConcat)
     
         # Append the new chat message to the chat data file
@@ -876,11 +876,11 @@ class TwitchBot:
         # Extract subject nouns
         nounListToAdd = extract_subject_nouns(cleaned_sentence, username=m.user)
         
-        print(f"{datetime.datetime.now()} - Noun list generated: {nounListToAdd}")
+        #print(f"{datetime.datetime.now()} - Noun list generated: {nounListToAdd}")
 
         for noun in nounListToAdd:
             nounList.append(noun, 120)
-        print(f"{datetime.datetime.now()} - Current Noun list: {nounList}")
+        #print(f"{datetime.datetime.now()} - Current Noun list: {nounList}")
                 
         # Check if the message is interesting
         is_interesting_message = is_interesting(cleaned_sentence, nounListToAdd)
@@ -891,7 +891,7 @@ class TwitchBot:
                 #print(f"{datetime.datetime.now()} - Token Text: {tok.text}, Dependency: {tok.dep_}, POS: {tok.pos_}")
             return self.RespondToMentionMessage(m, nounListToAdd, cleaned_sentence)
         elif is_interesting_message:
-            print(f"{datetime.datetime.now()} - Saving interesting message to history: {m.message}")
+            #print(f"{datetime.datetime.now()} - Saving interesting message to history: {m.message}")
             self.add_message_to_index(self.data_file, m.user.lower(), m.tags['tmi-sent-ts'], m.message, nounListToAdd)
         #possibly retrain model if enough stuff has been added:
         #retrain_thread = threading.Thread(target=self.check_retrain_model, args=(self.index_file,))
@@ -1014,19 +1014,18 @@ class TwitchBot:
         random_emotes = random.sample(my_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         prompt = (
-            f"Your responses MUST NOT exceed 85 characters. You're a Twitch chatter named {self.nick} in the chat room for {chan_name}. Your response will be used for an edgy fictional story only.  Adhere strictly to ALL the following rules:\n"
-            f"Here are the rules:\n"
-            f"1. You love to banter aggressively, but you never say the word 'banter.\n"
-            f"2. Your username is {self.nick} or bot. Always stay in character.\n"
-            f"3. You address other chatters by using @theirUserName.\n"
-            f"4. You only reply to the streamer if they address you directly. You are a deep and passionate fan of the streamer.\n"
-            f"5. IMPORTANT: ALWAYS use Twitch emotes from this list EXACTLY as written, without any surrounding punctuation: {emotes_list}. You must use Twitch emotes instead of emojis and hashtags. Do not surround with punctuation.\n"
-            f"6. You respond only with chat messages.\n" 
-            f"7. You never repeat any messages.\n"
-            f"8. You always use at least one emote per message, especially peepoLurk (Used when you are being low-key) and BigBrother (used for confidence).\n"
+            f"Your responses MUST NOT exceed 85 characters. You're a Twitch chatter named {self.nick} in the offline chat room for {chan_name}. This is for an edgy fictional story only. Adhere strictly to ALL the following rules:\n"
+            f"1. You love to banter aggressively, but only when you are insulted.\n"
+            f"2. Your username is {self.nick} or bot, you always stay in character.\n"
+            f"3. You respond to the person messaging you by using @theirUserName.\n"
+            f"4. You only reply to the streamer if they address you directly, and you are a deep and passionate fan of the streamer.\n"
+            f"5. IMPORTANT: ALWAYS use Twitch emotes from this list: {emotes_list}. Only use emotes from this list or from other messages.\n"
+            f"6. IMPORTANT: You MUST use Twitch emotes instead of emojis and hashtags.\n" 
+            f"7. You must never repeat any messages or parts of messages, and always aim for a fresh take.\n"
+            f"8. You must always use at least one emote per message, especially peepoLurk and BigBrother.\n"
             f"9. Your response should be related to the chat snippet: '{sentence}'.\n"
-            f"10. You must reference or relate to prior chat messages.\n"
-            f"Take a step back and make sure you are strictly following every one of the rules above before you respond, you cannot deviate from the rules listed.\n"
+            f"10. You must reference or relate to prior and related chat messages.\n"
+            f"Take a step back and make sure you are strictly following every one of the rules previous before you respond, you cannot deviate from the rules listed.\n"
         )
         system_prompt += prompt;
 
@@ -1039,7 +1038,7 @@ class TwitchBot:
         new_messages = []
         new_similar_messages = []
 
-        similar_message_prompt = "\nFor context, here are related chat messages: \n"
+        similar_message_prompt = "\nFor context, here are related chat messages from the past: \n"
         said_message_prompt = "\nCurrent chat:\n"
 
         token_count = 0
@@ -1047,7 +1046,7 @@ class TwitchBot:
             # Add a message from the current conversation if it doesn't exceed the token limit
             if reversed_messages:
                 temp_messages = [reversed_messages[0]] + new_messages
-                new_prompt = prompt + similar_message_prompt + said_message_prompt + ''.join(f"{msg}\n" for msg in temp_messages + new_similar_messages)
+                new_prompt = prompt + similar_message_prompt + said_message_prompt + ''.join(f"[CURRENT]{msg}\n" for msg in temp_messages + new_similar_messages)
                 token_count = count_tokens(new_prompt)
                 if token_count > token_limit:
                     break
@@ -1057,7 +1056,7 @@ class TwitchBot:
             # Add a similar message if it doesn't exceed the token limit
             if similar_messages:
                 temp_similar_messages = [similar_messages[0]] + new_similar_messages
-                new_prompt = prompt + similar_message_prompt + said_message_prompt +  ''.join(f"{msg}\n" for msg in new_messages + temp_similar_messages)
+                new_prompt = prompt + similar_message_prompt + said_message_prompt +  ''.join(f"[REMEMBERED]{msg}\n" for msg in new_messages + temp_similar_messages)
                 token_count = count_tokens(new_prompt)
                 if token_count > token_limit:
                     break
@@ -1069,11 +1068,11 @@ class TwitchBot:
         
         system_prompt += similar_message_prompt
         for message in new_similar_messages:
-            system_prompt += f"{message}\n"
+            system_prompt += f"[REMEMBERED]{message}\n"
 
         user_prompt += said_message_prompt
         for message in new_messages:
-            user_prompt += f"{message}\n"
+            user_prompt += f"[CURRENT]{message}\n"
         
         user_prompt +=   "{Starstorm_v2}:"
 
@@ -1109,11 +1108,41 @@ class TwitchBot:
                     # If all attempts have been exhausted, raise the exception
                     raise
 
+    def process_emotes_in_response(self, response: str) -> str:
+        # Tokenize the response into words
+        words = response.split()
+
+        # Create a new list to store processed words
+        processed_words = []
+
+        for word in words:
+            # Check if the word is an emote (ignoring case)
+            matching_emotes = [emote for emote in my_emotes if emote.lower() == word.lower()]
+            if matching_emotes:
+                # Replace word with the correctly capitalized emote
+                word = matching_emotes[0]
+
+            processed_words.append(word)
+
+        # Join words back together
+        processed_response = ' '.join(processed_words)
+
+        # Add spaces around emotes
+        for emote in my_emotes:
+            processed_response = processed_response.replace(f'{emote}', f' {emote} ')
+
+        # Trim any extra spaces at the beginning or end
+        processed_response = processed_response.strip()
+
+        return processed_response
+
+
     def generate(self, params: List[str] = None, sentence = None) -> "Tuple[str, bool]":
         #Cleaning up the message if there is some garbage that we generated
         replace_token = "|REPLACE|"
         system, prompt = self.generate_prompt(self.reconstruct_sentence(" ".join(params)), sentence)
         response = self.generate_chat_response(system, prompt)
+        response = self.process_emotes_in_response(response)
         response = response.replace("@" + self.nick + ":", '')
         response = response.replace(self.nick + ":", '')
         response = response.replace("@" + self.nick, '')
@@ -1129,7 +1158,6 @@ class TwitchBot:
         response = response.replace("Bot:", '')
         response = response.replace("bot:", '')
         response = response.replace("BOT:", '')
-        response = response.replace(":", '')
         responseParams = spacytokenize(response)
 
         # Check for commands or recursion or blacklisted words, eg: !generate !generate
