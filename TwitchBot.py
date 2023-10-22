@@ -1122,6 +1122,7 @@ class TwitchBot:
         return emoji_pattern.sub(r'', text)
         
     def process_emotes_in_response(self, response: str) -> str:
+        global my_emotes 
         # Tokenize the response into words
         words = response.split()
 
@@ -1142,11 +1143,6 @@ class TwitchBot:
 
         # Join words back together
         processed_response = ' '.join(processed_words)
-
-        # Add spaces around emotes
-        for emote in my_emotes:
-            # Make sure emote is surrounded by whitespace
-            processed_response = processed_response.replace(f'{emote}', f' {emote} ')
 
         return processed_response
 
