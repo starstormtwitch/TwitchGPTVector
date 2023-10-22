@@ -1127,15 +1127,18 @@ class TwitchBot:
         # Join words back together
         processed_response = ' '.join(processed_words)
 
-        # Add spaces around emotes
+        # Add spaces around emotes and remove punctuation except question marks
         for emote in my_emotes:
+            # Add spaces around the emote
             processed_response = processed_response.replace(f'{emote}', f' {emote} ')
+
+            # Remove punctuation after the emote (with optional whitespace), but keep question marks
+            processed_response = re.sub(rf'({emote})\s*[,.!]+(?!\?)', r'\1', processed_response)
 
         # Trim any extra spaces at the beginning or end
         processed_response = processed_response.strip()
 
         return processed_response
-
 
     def generate(self, params: List[str] = None, sentence = None) -> "Tuple[str, bool]":
         #Cleaning up the message if there is some garbage that we generated
