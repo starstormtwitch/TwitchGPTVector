@@ -918,7 +918,7 @@ class TwitchBot:
         return
 
     def handle_privmsg_commands(self, m, cur_time):
-        if m.message.startswith(("!setcooldown", "!setcd")) and self.check_if_permissions(m):
+        if m.message.startswith(("!setcooldown", "!setcd", "!cooldown", "!cd")) and self.check_if_permissions(m):
             self.handle_set_cooldown(m)
 
         if m.message.startswith("!enable") and self.check_if_permissions(m):
@@ -972,32 +972,6 @@ class TwitchBot:
         except Exception as e:
             logger.exception(e)
              
-    def reconstruct_sentence(self, text):
-        doc = nlp(text)
-        tokens = list(doc)
-        reconstructed_sentence = ""
-
-        for i, token in enumerate(tokens):
-            if token.is_space:
-                continue
-
-            is_replace_token = token.text in ('|', 'REPLACE') or (i > 0 and tokens[i - 1].text == '|' and token.text == 'REPLACE')
-            is_emote = token.text in all_emotes
-            is_prev_emote = i > 0 and tokens[i - 1].text in all_emotes
-
-            if is_emote or is_prev_emote:
-                reconstructed_sentence += " "
-            elif i > 0 and tokens[i - 1].text[-1] in ["'", "-"] or "'" in token.text or "-" in token.text:
-                pass
-            elif token.text == "#" or (i > 0 and tokens[i - 1].text == "#"):
-                reconstructed_sentence += " "
-            elif not token.is_punct and not token.is_left_punct and i > 0 and not is_replace_token:
-                reconstructed_sentence += " "
-
-            reconstructed_sentence += token.text
-
-        return reconstructed_sentence
-
     def generate_prompt(self, subject, sentence) -> Tuple[str, str]:
         system_prompt = ""
         user_prompt = ""
@@ -1128,7 +1102,7 @@ class TwitchBot:
 
         # Sort emotes by length, longest first
         my_emotes = sorted(my_emotes, key=len, reverse=True)
-    
+
         # Create a new list to store processed words
         processed_words = []
 
@@ -1137,19 +1111,19 @@ class TwitchBot:
             matching_emotes = [emote for emote in my_emotes if emote.lower() == word.lower()]
             if matching_emotes:
                 # Replace word with the correctly capitalized emote
-                word = matching_emotes[0]
+                word = matching_emotes[0] 
                 
             processed_words.append(word)
 
         # Join words back together
         processed_response = ' '.join(processed_words)
-
+        
         return processed_response
 
     def generate(self, params: List[str] = None, sentence = None) -> "Tuple[str, bool]":
         #Cleaning up the message if there is some garbage that we generated
         replace_token = "|REPLACE|"
-        system, prompt = self.generate_prompt(self.reconstruct_sentence(" ".join(params)), sentence)
+        system, prompt = self.generate_prompt(" ".join(params), sentence)
         response = self.generate_chat_response(system, prompt)
         response = self.process_emotes_in_response(response)
         response = self.remove_emojis(response)
@@ -1178,7 +1152,6 @@ class TwitchBot:
             return "I almost said something a little naughty BigBrother (message not allowed)", True
             
         sentenceResponse = " ".join(responseParams.copy())
-        sentenceResponse = self.reconstruct_sentence(sentenceResponse)
         return sentenceResponse, True
 
 
