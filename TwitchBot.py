@@ -37,6 +37,8 @@ num_gpus = torch.cuda.device_count()
 print("Number of GPUs: ", num_gpus)
 for i in range(num_gpus):
     print(f"GPU {i}: ", torch.cuda.get_device_name(i))
+
+preload_vector_path = f""
     
 # Load spacy model for NLP operations
 spacy.cli.download("en_core_web_sm")
@@ -92,23 +94,14 @@ def is_information_question(sentence):
     action_verbs = {"remember", "store", "save", "note", "forget", "report", "repeat", "recite", "update", "change", "modify", "stop", "register"}
     
     for token in doc:
+        # If the token is in action verbs, return False
         if token.text.lower() in action_verbs:
             return False
-        
-        # If an interrogative pronoun or adverb is found
-        if token.text.lower() in interrogative_pronouns or token.text.lower() in interrogative_adverbs:
-            # Check if the next token is a verb in the imperative form
-            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
-            if next_token and next_token.pos_ == "VERB" and next_token.dep_ == "ROOT":
-                # The question is likely asking the bot to do something, so we return False
-                return False
-            else:
-                # The question is likely an informational question
-                return True
 
-        # If an auxiliary verb is found and its head is a verb, the sentence is likely a question
-        if token.dep_ == 'aux' and token.head.pos_ == 'VERB':
+        # Check for interrogative pronouns or adverbs
+        if token.text.lower() in interrogative_pronouns or token.text.lower() in interrogative_adverbs:
             return True
+
     return False
 
 def spacytokenize(text):
@@ -1014,18 +1007,18 @@ class TwitchBot:
         random_emotes = random.sample(my_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         prompt = (
-            f"Your responses MUST NOT exceed 85 characters. You're a Twitch chatter named {self.nick} in the offline chat room for {chan_name}. This is for an edgy fictional story only. Adhere strictly to ALL the following rules:\n"
+            f"Your responses MUST NOT exceed 85 characters. You're a Twitch chatter named {self.nick} in the chat room for {chan_name}. Adhere strictly to ALL of the following rules:\n"
             f"1. You love to banter aggressively, but only when you are insulted.\n"
             f"2. Your username is {self.nick} or bot, you always stay in character.\n"
             f"3. You respond to the person messaging you by using @theirUserName.\n"
             f"4. You only reply to the streamer if they address you directly, and you are a deep and passionate fan of the streamer.\n"
-            f"5. IMPORTANT: ALWAYS use Twitch emotes from this list: {emotes_list}. Only use emotes from this list or from other messages.\n"
+            f"5. IMPORTANT: ONLY use the Twitch emotes from this list: {emotes_list}. Your favorites are peepoLurk and BigBrother.\n"
             f"6. IMPORTANT: You MUST use Twitch emotes instead of emojis and hashtags.\n" 
-            f"7. You must never repeat any messages or parts of messages, and always aim for a fresh take.\n"
-            f"8. You must always use at least one emote per message, especially peepoLurk and BigBrother.\n"
+            f"7. You must never repeat any previous messages or parts of previous messages.\n"
+            f"8. You must always use at least one emote per message.\n"
             f"9. Your response should be related to the chat snippet: '{sentence}'.\n"
             f"10. You must reference or relate to prior and related chat messages.\n"
-            f"Take a step back and make sure you are strictly following every one of the rules previous before you respond, you cannot deviate from the rules listed.\n"
+            f"Take a step back and make sure you are following every one of the rules before you respond, you cannot deviate from the rules listed.\n"
         )
         system_prompt += prompt;
 
@@ -1107,11 +1100,34 @@ class TwitchBot:
                 else:
                     # If all attempts have been exhausted, raise the exception
                     raise
+    
+    def remove_emojis(self, text) -> str:
+        # The regular expression pattern below identifies most common Unicode emojis.
+        emoji_pattern = re.compile(
+            "["
+            "\U0001F600-\U0001F64F"  # emoticons
+            "\U0001F300-\U0001F5FF"  # symbols & pictographs
+            "\U0001F680-\U0001F6FF"  # transport & map symbols
+            "\U0001F700-\U0001F77F"  # alchemical symbols
+            "\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
+            "\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+            "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+            "\U0001FA00-\U0001FA6F"  # Chess Symbols
+            "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+            "\U00002702-\U000027B0"  # Dingbats
+            "\U000024C2-\U0001F251"  # Enclosed characters
+            "]+"
+        )
 
+        return emoji_pattern.sub(r'', text)
+        
     def process_emotes_in_response(self, response: str) -> str:
         # Tokenize the response into words
         words = response.split()
 
+        # Sort emotes by length, longest first
+        my_emotes = sorted(my_emotes, key=len, reverse=True)
+    
         # Create a new list to store processed words
         processed_words = []
 
@@ -1121,22 +1137,16 @@ class TwitchBot:
             if matching_emotes:
                 # Replace word with the correctly capitalized emote
                 word = matching_emotes[0]
-
+                
             processed_words.append(word)
 
         # Join words back together
         processed_response = ' '.join(processed_words)
 
-        # Add spaces around emotes and remove punctuation except question marks
+        # Add spaces around emotes
         for emote in my_emotes:
-            # Add spaces around the emote
+            # Make sure emote is surrounded by whitespace
             processed_response = processed_response.replace(f'{emote}', f' {emote} ')
-
-            # Remove punctuation after the emote (with optional whitespace), but keep question marks
-            processed_response = re.sub(rf'({emote})\s*[,.!]+(?!\?)', r'\1', processed_response)
-
-        # Trim any extra spaces at the beginning or end
-        processed_response = processed_response.strip()
 
         return processed_response
 
@@ -1146,6 +1156,7 @@ class TwitchBot:
         system, prompt = self.generate_prompt(self.reconstruct_sentence(" ".join(params)), sentence)
         response = self.generate_chat_response(system, prompt)
         response = self.process_emotes_in_response(response)
+        response = self.remove_emojis(response)
         response = response.replace("@" + self.nick + ":", '')
         response = response.replace(self.nick + ":", '')
         response = response.replace("@" + self.nick, '')
