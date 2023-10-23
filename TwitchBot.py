@@ -266,6 +266,18 @@ class TwitchBot:
         my_emotes = [emote for emote in my_emotes if emote.isalnum()]
         print(' '.join(my_emotes))
 
+    def GetIfStreamerLive(self):
+        stream_url = f'https://api.twitch.tv/helix/streams?user_id={self.broadcaster_id}'
+        headers = {
+            'Client-ID': self.ClientId,
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        response = requests.get(stream_url, headers=headers)
+        data = response.json()['data']
+        
+        # If data is empty, streamer is offline
+        return len(data) > 0
+
     
     def GetTwitchAuthorization(self):
         client_id = self.ClientId
@@ -918,7 +930,7 @@ class TwitchBot:
         return
 
     def handle_privmsg_commands(self, m, cur_time):
-        if m.message.startswith(("!setcooldown", "!setcd", "!cooldown", "!cd")) and self.check_if_permissions(m):
+        if m.message.startswith(("!setcooldown", "!setcd")) and self.check_if_permissions(m):
             self.handle_set_cooldown(m)
 
         if m.message.startswith("!enable") and self.check_if_permissions(m):
@@ -980,8 +992,10 @@ class TwitchBot:
         num_emotes = min(len(my_emotes), 50)
         random_emotes = random.sample(my_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
+        liveOrNot = self.GetIfStreamerLive()
+        status = "online" if liveOrNot else "offline"
         prompt = (
-            f"Your responses MUST NOT exceed 85 characters. You're a Twitch chatter named {self.nick} in the chat room for {chan_name}. Adhere strictly to ALL of the following rules:\n"
+            f"Your responses MUST NOT exceed 85 characters. You're a Twitch chatter named {self.nick} in the chat room for {chan_name}, who is currently {status}. Adhere strictly to ALL of the following rules:\n"
             f"1. You love to banter aggressively, but only when you are insulted.\n"
             f"2. Your username is {self.nick} or bot, you always stay in character.\n"
             f"3. You respond to the person messaging you by using @theirUserName.\n"
@@ -1102,7 +1116,7 @@ class TwitchBot:
 
         # Sort emotes by length, longest first
         my_emotes = sorted(my_emotes, key=len, reverse=True)
-
+    
         # Create a new list to store processed words
         processed_words = []
 
@@ -1111,13 +1125,13 @@ class TwitchBot:
             matching_emotes = [emote for emote in my_emotes if emote.lower() == word.lower()]
             if matching_emotes:
                 # Replace word with the correctly capitalized emote
-                word = matching_emotes[0] 
+                word = matching_emotes[0]
                 
             processed_words.append(word)
 
         # Join words back together
         processed_response = ' '.join(processed_words)
-        
+
         return processed_response
 
     def generate(self, params: List[str] = None, sentence = None) -> "Tuple[str, bool]":
