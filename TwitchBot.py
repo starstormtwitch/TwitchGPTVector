@@ -194,25 +194,7 @@ def append_chat_data(data_file, username, timestamp, message, vector):
         f.write(f"{timestamp}\t{username}\t{message}\t{vector_str}\n")
 
 class TwitchBot:
-    # Initialization
-    all_emotes = []
-    my_emotes = []
-    lastSaidMessage = ""      
-    nounList = TimedList()
-    saidMessages = TimedList()
-    global_index = None
-    data_file = 'broke'
-    index_file = 'index.ann'
-    access_token = ''
-    broadcaster_id = ''
-    user_id = ''
-    new_sentence_count = 0
-    training = False
-    this_channel = ''
-    
     def get_all_emotes(self, channelname):
-        global my_emotes
-        global all_emotes
         print("Getting emotes for 7tv, bttv, ffz")
         response = requests.get(
             f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv"
@@ -545,6 +527,19 @@ class TwitchBot:
                  cooldown: int, help_message_timer: int, automatic_generation_timer: int,
                  whisper_cooldown: int, enable_generate_command: bool, allow_generate_params: bool,
                  generate_commands: Tuple[str], openai_key: str, twitchaccess_token: str):
+        self.all_emotes = []
+        self.my_emotes = []
+        self.lastSaidMessage = ""      
+        self.nounList = TimedList()
+        self.saidMessages = TimedList() 
+        self.global_index = None
+        self.data_file = 'broke'
+        self.index_file = 'index.ann'
+        self.access_token = ''
+        self.broadcaster_id = ''
+        self.user_id = ''
+        self.new_sentence_count = 0
+        self.training = False
         self.this_channel = channel
         self.host = host
         self.port = port
@@ -750,7 +745,6 @@ class TwitchBot:
             )
 
     def handle_generate_command(self, m, cur_time):
-        global saidMessages
         if not self.enable_generate_command and not self.check_if_permissions(m):
             return
 
@@ -830,8 +824,6 @@ class TwitchBot:
             )
 
     def handle_conversation_info_gathering(self, m, cur_time):
-        global saidMessages
-        global nounList
         #add to context history
         self.saidMessages.append("{"+m.user+"}: " +  m.message, 360)
 
@@ -875,7 +867,6 @@ class TwitchBot:
         
 
     def RespondToMentionMessage(self, m, nounListToAdd, cleanedSentence):
-        global saidMessages
         self.restart_automatic_generation_timer()
         
         print('Answering to mention. ')
@@ -955,9 +946,35 @@ class TwitchBot:
 
         except Exception as e:
             logger.exception(e)
+
+           
+    def reconstruct_sentence(self, text):
+        doc = nlp(text)
+        tokens = list(doc)
+        reconstructed_sentence = ""
+
+        for i, token in enumerate(tokens):
+            if token.is_space:
+                continue
+
+            is_replace_token = token.text in ('|', 'REPLACE') or (i > 0 and tokens[i - 1].text == '|' and token.text == 'REPLACE')
+            is_emote = token.text in self.all_emotes
+            is_prev_emote = i > 0 and tokens[i - 1].text in self.all_emotes
+
+            if is_emote or is_prev_emote:
+                reconstructed_sentence += " "
+            elif i > 0 and tokens[i - 1].text[-1] in ["'", "-"] or "'" in token.text or "-" in token.text:
+                pass
+            elif token.text == "#" or (i > 0 and tokens[i - 1].text == "#"):
+                reconstructed_sentence += " "
+            elif not token.is_punct and not token.is_left_punct and i > 0 and not is_replace_token:
+                reconstructed_sentence += " "
+
+            reconstructed_sentence += token.text
+
+        return reconstructed_sentence
              
     def generate_prompt(self, subject, sentence) -> Tuple[str, str]:
-        global saidMessages
         system_prompt = ""
         user_prompt = ""
         
@@ -973,7 +990,7 @@ class TwitchBot:
             f"2. Your username is {self.nick} or bot, you always stay in character.\n"
             f"3. You respond to the person messaging you by using @theirUserName.\n"
             f"4. You only reply to the streamer if they address you directly, and you are a deep and passionate fan of the streamer.\n"
-            f"5. IMPORTANT: ONLY use the Twitch emotes from this list: {emotes_list}. Your favorites are peepoLurk and BigBrother.\n"
+            f"5. IMPORTANT: ONLY use the Twitch emotes from this list: {emotes_list}. Your favorite is BigBrother.\n"
             f"6. IMPORTANT: You MUST use Twitch emotes instead of emojis and hashtags.\n" 
             f"7. You must never repeat any previous messages or parts of previous messages.\n"
             f"8. You must always use at least one emote per message.\n"
@@ -1083,7 +1100,6 @@ class TwitchBot:
         return emoji_pattern.sub(r'', text)
         
     def process_emotes_in_response(self, response: str) -> str:
-        global my_emotes 
         # Tokenize the response into words
         words = response.split()
 
@@ -1110,9 +1126,8 @@ class TwitchBot:
     def generate(self, params: List[str] = None, sentence = None) -> "Tuple[str, bool]":
         #Cleaning up the message if there is some garbage that we generated
         replace_token = "|REPLACE|"
-        system, prompt = self.generate_prompt(" ".join(params), sentence)
+        system, prompt = self.generate_prompt(self.reconstruct_sentence(" ".join(params)), sentence)
         response = self.generate_chat_response(system, prompt)
-        response = self.process_emotes_in_response(response)
         response = self.remove_emojis(response)
         response = response.replace("@" + self.nick + ":", '')
         response = response.replace(self.nick + ":", '')
@@ -1139,6 +1154,8 @@ class TwitchBot:
             return "I almost said something a little naughty BigBrother (message not allowed)", True
             
         sentenceResponse = " ".join(responseParams.copy())
+        sentenceResponse = self.reconstruct_sentence(sentenceResponse)
+        sentenceResponse = self.process_emotes_in_response(sentenceResponse)
         return sentenceResponse, True
 
 
@@ -1176,9 +1193,6 @@ class TwitchBot:
                 logger.warning(f"[{error}] upon sending help message. Ignoring.")
                 
     def send_automatic_generation_message(self) -> None:
-        global lastSaidMessage
-        global nounList
-        global saidMessages
         """Send an automatic generation message to the connected chat.
         
         As long as the bot wasn't disabled, just like if someone typed "!g" in chat.
