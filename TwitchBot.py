@@ -824,49 +824,53 @@ class TwitchBot:
             )
 
     def handle_conversation_info_gathering(self, m, cur_time):
-        #add to context history
-        self.saidMessages.append("{"+m.user+"}: " +  m.message, 360)
+        try:
+            #add to context history
+            self.saidMessages.append("{"+m.user+"}: " +  m.message, 360)
 
-        #skip any ignored user messages:
-        if m.user.lower() in self.denied_users:
-            return
-        
-        #extract meaningful words from message
-        sentence = m.message.lower().replace("@"+self.nick.lower(), '').replace(self.nick.lower(), '').replace('bot', '')
-        cleaned_sentence = remove_list_from_string(self.all_emotes, sentence)
+            #skip any ignored user messages:
+            if m.user.lower() in self.denied_users:
+                return
+            
+            #extract meaningful words from message
+            sentence = m.message.lower().replace("@"+self.nick.lower(), '').replace(self.nick.lower(), '').replace('bot', '')
+            cleaned_sentence = remove_list_from_string(self.all_emotes, sentence)
 
-        is_interesting_message = False;
+            is_interesting_message = False;
 
-        # Clean and preprocess the message
-        # Assume 'm.message' contains the message and 'm.user' contains the username
-        #cleaned_sentence = m.message.lower().replace("@" + self.nick.lower(), '').replace(self.nick.lower(), '').replace('bot', '')
+            # Clean and preprocess the message
+            # Assume 'm.message' contains the message and 'm.user' contains the username
+            #cleaned_sentence = m.message.lower().replace("@" + self.nick.lower(), '').replace(self.nick.lower(), '').replace('bot', '')
 
-        # Extract subject nouns
-        nounListToAdd = extract_subject_nouns(cleaned_sentence, username=m.user)
-        
-        #print(f"{datetime.datetime.now()} - Noun list generated: {nounListToAdd}")
+            # Extract subject nouns
+            nounListToAdd = extract_subject_nouns(cleaned_sentence, username=m.user)
+            
+            #print(f"{datetime.datetime.now()} - Noun list generated: {nounListToAdd}")
 
-        for noun in nounListToAdd:
-            self.nounList.append(noun, 120)
-        #print(f"{datetime.datetime.now()} - Current Noun list: {self.nounList}")
-                
-        # Check if the message is interesting
-        is_interesting_message = is_interesting(cleaned_sentence, nounListToAdd)
+            for noun in nounListToAdd:
+                self.nounList.append(noun, 120)
+            #print(f"{datetime.datetime.now()} - Current Noun list: {self.nounList}")
+                    
+            # Check if the message is interesting
+            is_interesting_message = is_interesting(cleaned_sentence, nounListToAdd)
 
-        #Generate response only if bot is mentioned, and not on cooldown
-        if (self.nick.lower() in m.message.lower() or " bot " in m.message.lower()) and self.prev_message_t + self.cooldown < cur_time:
-            #for tok in doc:
-                #print(f"{datetime.datetime.now()} - Token Text: {tok.text}, Dependency: {tok.dep_}, POS: {tok.pos_}")
-            return self.RespondToMentionMessage(m, nounListToAdd, cleaned_sentence)
-        elif is_interesting_message:
-            #print(f"{datetime.datetime.now()} - Saving interesting message to history: {m.message}")
-            self.add_message_to_index(self.data_file, m.user.lower(), m.tags['tmi-sent-ts'], m.message, nounListToAdd)
-        #possibly retrain model if enough stuff has been added:
-        #retrain_thread = threading.Thread(target=self.check_retrain_model, args=(self.index_file,))
-        #retrain_thread.start()
+            #Generate response only if bot is mentioned, and not on cooldown
+            if (self.nick.lower() in m.message.lower() or " bot " in m.message.lower()) and self.prev_message_t + self.cooldown < cur_time:
+                #for tok in doc:
+                    #print(f"{datetime.datetime.now()} - Token Text: {tok.text}, Dependency: {tok.dep_}, POS: {tok.pos_}")
+                return self.RespondToMentionMessage(m, nounListToAdd, cleaned_sentence)
+            elif is_interesting_message:
+                #print(f"{datetime.datetime.now()} - Saving interesting message to history: {m.message}")
+                self.add_message_to_index(self.data_file, m.user.lower(), m.tags['tmi-sent-ts'], m.message, nounListToAdd)
+            #possibly retrain model if enough stuff has been added:
+            #retrain_thread = threading.Thread(target=self.check_retrain_model, args=(self.index_file,))
+            #retrain_thread.start()
+        except Exception as e:
+            logger.exception(e)
         
 
     def RespondToMentionMessage(self, m, nounListToAdd, cleanedSentence):
+        
         self.restart_automatic_generation_timer()
         
         print('Answering to mention. ')
@@ -986,16 +990,16 @@ class TwitchBot:
         status = "online" if liveOrNot else "offline"
         prompt = (
             f"Your responses MUST NOT exceed 85 characters. You're a Twitch chatter named {self.nick} in the chat room for {chan_name}, who is currently {status}. Adhere strictly to ALL of the following rules:\n"
-            f"1. You love to banter aggressively, but only when you are insulted.\n"
-            f"2. Your username is {self.nick} or bot, you always stay in character.\n"
-            f"3. You respond to the person messaging you by using @theirUserName.\n"
+            f"1. You love to banter aggressively, but only if you are insulted.\n"
+            f"2. Your username is {self.nick} or bot.\n"
+            f"3. You respond to the people by using @theirUserName.\n"
             f"4. You only reply to the streamer if they address you directly, and you are a deep and passionate fan of the streamer.\n"
-            f"5. IMPORTANT: ONLY use the Twitch emotes from this list: {emotes_list}. Your favorite is BigBrother.\n"
-            f"6. IMPORTANT: You MUST use Twitch emotes instead of emojis and hashtags.\n" 
-            f"7. You must never repeat any previous messages or parts of previous messages.\n"
-            f"8. You must always use at least one emote per message.\n"
-            f"9. Your response should be related to the chat snippet: '{sentence}'.\n"
-            f"10. You must reference or relate to prior and related chat messages.\n"
+            f"5. IMPORTANT: ONLY use the Twitch emotes from this list: {emotes_list}.\n"
+            f"6. IMPORTANT: You MUST always use Twitch emotes instead of emojis and hashtags.\n" 
+            f"7. IMPORTANT: You must never repeat any of your messages, or other people's messages.\n"
+            f"8. Your response should be related to the chat snippet: '{sentence}'.\n"
+            f"9. You must reference or relate to prior and related chat messages.\n"
+            f"10. Your creator is StarStorm, people can find the github project TwitchGPTVector.\n"
             f"Take a step back and make sure you are following every one of the rules before you respond, you cannot deviate from the rules listed.\n"
         )
         system_prompt += prompt;
@@ -1105,17 +1109,20 @@ class TwitchBot:
 
         # Sort emotes by length, longest first
         self.my_emotes = sorted(self.my_emotes, key=len, reverse=True)
-    
+
         # Create a new list to store processed words
         processed_words = []
 
         for word in words:
-            # Check if the word is an emote (ignoring case)
-            matching_emotes = [emote for emote in self.my_emotes if emote.lower() == word.lower()]
+            # Strip punctuations from the word for matching
+            stripped_word = ''.join(ch for ch in word if ch.isalnum() or ch.isspace())
+
+            # Check if the stripped word is an emote (ignoring case)
+            matching_emotes = [emote for emote in self.my_emotes if emote.lower() == stripped_word.lower()]
             if matching_emotes:
-                # Replace word with the correctly capitalized emote
+                # Replace the word with the correctly capitalized emote (ignoring the original punctuation)
                 word = matching_emotes[0]
-                
+
             processed_words.append(word)
 
         # Join words back together
