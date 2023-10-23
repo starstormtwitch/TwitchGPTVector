@@ -57,12 +57,6 @@ class TimedList(list):
         list.append(self, item)
         threading.Thread(target=ttl_set_remove, args=(self, item, ttl)).start()
 
-# Initialization
-all_emotes = []
-my_emotes = []
-lastSaidMessage = ""      
-nounList = TimedList()
-saidMessages = TimedList()
 logger = logging.getLogger(__name__)
 
 def count_tokens(text):
@@ -200,6 +194,12 @@ def append_chat_data(data_file, username, timestamp, message, vector):
         f.write(f"{timestamp}\t{username}\t{message}\t{vector_str}\n")
 
 class TwitchBot:
+    # Initialization
+    all_emotes = []
+    my_emotes = []
+    lastSaidMessage = ""      
+    nounList = TimedList()
+    saidMessages = TimedList()
     global_index = None
     data_file = 'broke'
     index_file = 'index.ann'
@@ -208,6 +208,7 @@ class TwitchBot:
     user_id = ''
     new_sentence_count = 0
     training = False
+    this_channel = ''
     
     def get_all_emotes(self, channelname):
         global my_emotes
@@ -216,9 +217,9 @@ class TwitchBot:
         response = requests.get(
             f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv"
         )
-        my_emotes = [emote["code"] for emote in response.json()]
-        all_emotes = [emote["code"] for emote in response.json()]
-        my_emotes = [emote for emote in my_emotes if len(emote) >= 3]
+        self.my_emotes = [emote["code"] for emote in response.json()]
+        self.all_emotes = [emote["code"] for emote in response.json()]
+        self.my_emotes = [emote for emote in self.my_emotes if len(emote) >= 3]
         
         print("Getting emotes for global twitch")
         # Get emoticon set IDs for the channel
@@ -231,8 +232,8 @@ class TwitchBot:
         print(response)
         emoticonsGlobal = response.json()['data']
         for emote in emoticonsGlobal:
-                my_emotes.append(str(emote['name']))
-                all_emotes.append(str(emote['name']))
+                self.my_emotes.append(str(emote['name']))
+                self.all_emotes.append(str(emote['name']))
                 
         #get sub emotes:
         print("Getting emotes for twitch sub")
@@ -245,7 +246,7 @@ class TwitchBot:
         print(response)
         emoticons = response.json()['data']
         for emote in emoticons:
-                all_emotes.append(str(emote['name']))
+                self.all_emotes.append(str(emote['name']))
 
         
         #get if sub or not
@@ -260,11 +261,11 @@ class TwitchBot:
             #if true get sub emotes because we are a sub!
             if len(data) > 0:
                 for emote in emoticons:
-                        my_emotes.append(str(emote['name']))
+                        self.my_emotes.append(str(emote['name']))
         except Exception as error:
             logger.warning(f"[{error}] upon getting subbed. Ignoring.")
-        my_emotes = [emote for emote in my_emotes if emote.isalnum()]
-        print(' '.join(my_emotes))
+        self.my_emotes = [emote for emote in self.my_emotes if emote.isalnum()]
+        print(' '.join(self.my_emotes))
 
     def GetIfStreamerLive(self):
         stream_url = f'https://api.twitch.tv/helix/streams?user_id={self.broadcaster_id}'
@@ -278,34 +279,6 @@ class TwitchBot:
         # If data is empty, streamer is offline
         return len(data) > 0
 
-    
-    def GetTwitchAuthorization(self):
-        client_id = self.ClientId
-        # Twitch OAuth URLs
-        redirect_uri = 'http://localhost:3000'
-        # Scopes that you want to request
-        scopes = ["chat:read", "chat:edit", "whispers:read", "whispers:edit", "user:read:subscriptions", "user_subscriptions", "moderation:read"]
-        authorization_base_url = f'https://id.twitch.tv/oauth2/?response_type=token&authorize?client_id={client_id}?redirect_uri={redirect_uri}?scope={scopes}'
-        
-        oauth = OAuth2Session(client_id, scope=scopes, redirect_uri=redirect_uri)
-        base_url = "https://id.twitch.tv/oauth2/authorize"
-        params = {
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
-            "scope": " ".join(scopes),
-            "response_type": "token",
-            "state": oauth._state,
-        }
-        authorization_url = f"{base_url}?{urlencode(params)}"
-
-        print("Visit the following URL to authorize your application, make sure it's for your bot:")
-        print(authorization_url)
-
-        # Step 2: User authorizes the application and provides the authorization code
-        authorization_code = input('Enter the authorization code from the url return http://localhost:3000/?code={CODEFROMEHERE}scope=whispers%3Aread+whispers%3Aedit&state=asdfasdfasdf: ')
-
-        # Now we can use the access token to authenticate API requests
-        return authorization_code
 
     def GetUserAndBroadcasterId(self):
         print("Getting user id")
@@ -322,7 +295,7 @@ class TwitchBot:
         else:
             raise ValueError("could not pull userid") 
 
-        url = f'https://api.twitch.tv/helix/users?login={self.chan[1:]}'
+        url = f'https://api.twitch.tv/helix/users?login={self.this_channel[1:]}'
         headers = {
             'Client-ID': self.ClientId,
             'Authorization': f'Bearer {self.access_token}'
@@ -567,15 +540,34 @@ class TwitchBot:
         return index
 
 
-    def __init__(self):
+    def __init__(self, channel: str, host: str, port: int, nick: str, auth: str, 
+                 client_id: str, denied_users: List[str], allowed_users: List[str], 
+                 cooldown: int, help_message_timer: int, automatic_generation_timer: int,
+                 whisper_cooldown: int, enable_generate_command: bool, allow_generate_params: bool,
+                 generate_commands: Tuple[str], openai_key: str, twitchaccess_token: str):
+        self.this_channel = channel
+        self.host = host
+        self.port = port
+        self.nick = nick
+        self.auth = auth
+        self.ClientId = client_id
+        self.denied_users = denied_users
+        self.allowed_users = allowed_users
+        self.cooldown = cooldown
+        self.help_message_timer = help_message_timer
+        self.automatic_generation_timer = automatic_generation_timer
+        self.whisper_cooldown = whisper_cooldown
+        self.enable_generate_command = enable_generate_command
+        self.allow_generate_params = allow_generate_params
+        self.generate_commands = generate_commands
+        openai.api_key = openai_key
         self.initialize_variables()
         self.setup_mod_list_and_blacklist()
-        self.read_settings()
-        self.access_token = self.GetTwitchAuthorization()
+        self.access_token = twitchaccess_token
         self.GetUserAndBroadcasterId()
         self.setup_database_and_vectors()
         self.setup_timers()
-        self.get_all_emotes(self.chan)
+        self.get_all_emotes(self.this_channel)
         self.start_websocket_bot()
 
 
@@ -588,34 +580,9 @@ class TwitchBot:
     def setup_mod_list_and_blacklist(self):
         self.set_blacklist()
 
-    def read_settings(self):
-        Settings(self)
-    
-    def set_settings(self, settings: SettingsData):
-        """Fill class instance attributes based on the settings file.
-        Args:
-            settings (SettingsData): The settings dict with information from the settings file.
-        """
-        self.host = settings["Host"]
-        self.port = settings["Port"]
-        self.chan = settings["Channel"]
-        self.nick = settings["Nickname"]
-        self.auth = settings["Authentication"]
-        self.ClientId = settings["ClientID"]
-        self.denied_users = [user.lower() for user in settings["DeniedUsers"]] + [self.nick.lower()]
-        self.allowed_users = [user.lower() for user in settings["AllowedUsers"]]
-        self.cooldown = settings["Cooldown"]
-        self.help_message_timer = settings["HelpMessageTimer"]
-        self.automatic_generation_timer = settings["AutomaticGenerationTimer"]
-        self.whisper_cooldown = settings["WhisperCooldown"]
-        self.enable_generate_command = settings["EnableGenerateCommand"]
-        self.allow_generate_params = settings["AllowGenerateParams"]
-        self.generate_commands = tuple(settings["GenerateCommands"])
-        openai.api_key = settings["OpenAIKey"]
-
     def setup_database_and_vectors(self):
-        self.data_file = f'vectors_{self.chan.replace("#", "")}.npy'
-        self.index_file = f'index_{self.chan.replace("#", "")}.npy'
+        self.data_file = f'vectors_{self.this_channel.replace("#", "")}.npy'
+        self.index_file = f'index_{self.this_channel.replace("#", "")}.npy'
         self.global_index = self.setup(self.data_file, self.index_file)
 
     def setup_timers(self):
@@ -647,13 +614,14 @@ class TwitchBot:
     def start_websocket_bot(self):
         self.ws = TwitchWebsocket(host=self.host,
                                   port=self.port,
-                                  chan=self.chan,
+                                  chan=self.this_channel,
                                   nick=self.nick,
                                   auth=self.auth,
                                   callback=self.message_handler,
                                   capability=["commands", "tags"],
                                   live=True)
-        self.ws.start_bot()
+        self.bot_thread = threading.Thread(target=self.ws.start_bot)
+        self.bot_thread.start()
 
     def check_retrain_model(self, index_file):
         global pretrained_flag
@@ -782,6 +750,7 @@ class TwitchBot:
             )
 
     def handle_generate_command(self, m, cur_time):
+        global saidMessages
         if not self.enable_generate_command and not self.check_if_permissions(m):
             return
 
@@ -801,7 +770,7 @@ class TwitchBot:
                     # Reset cooldown if a message was actually generated
                     self.prev_message_t = time.time()
             logger.info(sentence)
-            saidMessages.append("{" +self.nick +"}: " + sentence, 360)
+            self.saidMessages.append("{" +self.nick +"}: " + sentence, 360)
             self.ws.send_message(sentence)
         else:
             self.send_whisper(m.user, f"Cooldown hit: {self.prev_message_t + self.cooldown - cur_time:0.2f} out of {self.cooldown:.0f}s remaining. !nopm to stop these cooldown pm's.")
@@ -861,8 +830,10 @@ class TwitchBot:
             )
 
     def handle_conversation_info_gathering(self, m, cur_time):
+        global saidMessages
+        global nounList
         #add to context history
-        saidMessages.append("{"+m.user+"}: " +  m.message, 360)
+        self.saidMessages.append("{"+m.user+"}: " +  m.message, 360)
 
         #skip any ignored user messages:
         if m.user.lower() in self.denied_users:
@@ -870,7 +841,7 @@ class TwitchBot:
         
         #extract meaningful words from message
         sentence = m.message.lower().replace("@"+self.nick.lower(), '').replace(self.nick.lower(), '').replace('bot', '')
-        cleaned_sentence = remove_list_from_string(all_emotes, sentence)
+        cleaned_sentence = remove_list_from_string(self.all_emotes, sentence)
 
         is_interesting_message = False;
 
@@ -884,8 +855,8 @@ class TwitchBot:
         #print(f"{datetime.datetime.now()} - Noun list generated: {nounListToAdd}")
 
         for noun in nounListToAdd:
-            nounList.append(noun, 120)
-        #print(f"{datetime.datetime.now()} - Current Noun list: {nounList}")
+            self.nounList.append(noun, 120)
+        #print(f"{datetime.datetime.now()} - Current Noun list: {self.nounList}")
                 
         # Check if the message is interesting
         is_interesting_message = is_interesting(cleaned_sentence, nounListToAdd)
@@ -904,20 +875,21 @@ class TwitchBot:
         
 
     def RespondToMentionMessage(self, m, nounListToAdd, cleanedSentence):
+        global saidMessages
         self.restart_automatic_generation_timer()
         
         print('Answering to mention. ')
         if not nounListToAdd:
             nounListToAdd.append(cleanedSentence)
             
-        if len(m.message.split()) >= 5 and not is_information_question(remove_list_from_string(all_emotes, m.message.lower())):
+        if len(m.message.split()) >= 5 and not is_information_question(remove_list_from_string(self.all_emotes, m.message.lower())):
             print(f"{datetime.datetime.now()} - Saving interesting mention to history: {m.message}")
             self.add_message_to_index(self.data_file, m.user.lower(), m.tags['tmi-sent-ts'], m.message, nounListToAdd)
 
         if self._enabled:
             params = spacytokenize(" ".join(nounListToAdd) if isinstance(nounListToAdd, list) else nounListToAdd)
             sentence, success = self.generate(params, cleanedSentence)
-            saidMessages.append("{" +self.nick +"}: " + sentence, 360)
+            self.saidMessages.append("{" +self.nick +"}: " + sentence, 360)
             if success:
                 self.prev_message_t = time.time()
                 try:
@@ -985,12 +957,13 @@ class TwitchBot:
             logger.exception(e)
              
     def generate_prompt(self, subject, sentence) -> Tuple[str, str]:
+        global saidMessages
         system_prompt = ""
         user_prompt = ""
         
-        chan_name = self.chan.replace("#", '')
-        num_emotes = min(len(my_emotes), 50)
-        random_emotes = random.sample(my_emotes, num_emotes)
+        chan_name = self.this_channel.replace("#", '')
+        num_emotes = min(len(self.my_emotes), 50)
+        random_emotes = random.sample(self.my_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         liveOrNot = self.GetIfStreamerLive()
         status = "online" if liveOrNot else "offline"
@@ -1015,7 +988,7 @@ class TwitchBot:
 
         token_limit = 4096
         token_limit = token_limit - (token_limit/2)
-        reversed_messages = saidMessages[::-1]
+        reversed_messages = self.saidMessages[::-1]
         new_messages = []
         new_similar_messages = []
 
@@ -1115,14 +1088,14 @@ class TwitchBot:
         words = response.split()
 
         # Sort emotes by length, longest first
-        my_emotes = sorted(my_emotes, key=len, reverse=True)
+        self.my_emotes = sorted(self.my_emotes, key=len, reverse=True)
     
         # Create a new list to store processed words
         processed_words = []
 
         for word in words:
             # Check if the word is an emote (ignoring case)
-            matching_emotes = [emote for emote in my_emotes if emote.lower() == word.lower()]
+            matching_emotes = [emote for emote in self.my_emotes if emote.lower() == word.lower()]
             if matching_emotes:
                 # Replace word with the correctly capitalized emote
                 word = matching_emotes[0]
@@ -1205,6 +1178,7 @@ class TwitchBot:
     def send_automatic_generation_message(self) -> None:
         global lastSaidMessage
         global nounList
+        global saidMessages
         """Send an automatic generation message to the connected chat.
         
         As long as the bot wasn't disabled, just like if someone typed "!g" in chat.
@@ -1212,11 +1186,11 @@ class TwitchBot:
         try:
             print(f"{datetime.datetime.now()} - !!!!!!!!!!generate time!!!!!!!!")
             print('noun list:')
-            print(nounList)
+            print(self.nounList)
             print(self._enabled)
             cur_time = time.time()
             if self._enabled and self.prev_message_t + self.cooldown < cur_time :
-                phraseToUse = self.find_phrase_to_use(nounList)
+                phraseToUse = self.find_phrase_to_use(self.nounList)
                 print(phraseToUse)
                 if phraseToUse is not None:
                     params = spacytokenize(phraseToUse)
@@ -1224,14 +1198,14 @@ class TwitchBot:
                     if success:
                         # Try to send a message. Just log a warning on fail
                         try:
-                            if sentenceGenerated not in '\t'.join(saidMessages):
-                                saidMessages.append("{"+ self.nick + "}: " + sentenceGenerated, 360)
+                            if sentenceGenerated not in '\t'.join(self.saidMessages):
+                                self.saidMessages.append("{"+ self.nick + "}: " + sentenceGenerated, 360)
                                 self.ws.send_message(sentenceGenerated)
                                 logger.info("Said Message")
                                 self.prev_message_t = time.time()
                             else:
                                 logger.info("Tried to say a message, but we saw it was said already")
-                            lastSaidMessage = sentenceGenerated
+                            self.lastSaidMessage = sentenceGenerated
                         except Exception as error:
                             logger.warning(f"[{error}] upon sending help message. Ignoring.")
                     else:
@@ -1262,7 +1236,88 @@ class TwitchBot:
 
     def check_link(self, message: str) -> bool:
         return self.link_regex.search(message)
+    
+class MultiChannelTwitchBot:
+    bots = {}
+    def __init__(self):
+        self.read_settings()
+        access_token = self.GetTwitchAuthorization()
+        for channel in self.channels:
+            print(f"Starting up channel: {channel}")
+            self.bots[channel] = TwitchBot(
+                channel, 
+                self.host, 
+                self.port, 
+                self.nick, 
+                self.auth, 
+                self.ClientId,
+                self.denied_users,
+                self.allowed_users,
+                self.cooldown,
+                self.help_message_timer,
+                self.automatic_generation_timer,
+                self.whisper_cooldown,
+                self.enable_generate_command,
+                self.allow_generate_params,
+                self.generate_commands,
+                openai.api_key,
+                access_token
+            )
+
+    def read_settings(self):
+        Settings(self)
+    
+    def set_settings(self, settings: SettingsData):
+        """Fill class instance attributes based on the settings file.
+        Args:
+            settings (SettingsData): The settings dict with information from the settings file.
+        """
+        print("Loading global settings")
+        self.host = settings["Host"]
+        self.port = settings["Port"]
+        self.channels = settings["Channels"]
+        self.nick = settings["Nickname"]
+        self.auth = settings["Authentication"]
+        self.ClientId = settings["ClientID"]
+        self.denied_users = [user.lower() for user in settings["DeniedUsers"]] + [self.nick.lower()]
+        self.allowed_users = [user.lower() for user in settings["AllowedUsers"]]
+        self.cooldown = settings["Cooldown"]
+        self.help_message_timer = settings["HelpMessageTimer"]
+        self.automatic_generation_timer = settings["AutomaticGenerationTimer"]
+        self.whisper_cooldown = settings["WhisperCooldown"]
+        self.enable_generate_command = settings["EnableGenerateCommand"]
+        self.allow_generate_params = settings["AllowGenerateParams"]
+        self.generate_commands = tuple(settings["GenerateCommands"])
+        openai.api_key = settings["OpenAIKey"]
+
+    def GetTwitchAuthorization(self):
+        client_id = self.ClientId
+        # Twitch OAuth URLs
+        redirect_uri = 'http://localhost:3000'
+        # Scopes that you want to request
+        scopes = ["chat:read", "chat:edit", "whispers:read", "whispers:edit", "user:read:subscriptions", "user_subscriptions", "moderation:read"]
+        authorization_base_url = f'https://id.twitch.tv/oauth2/?response_type=token&authorize?client_id={client_id}?redirect_uri={redirect_uri}?scope={scopes}'
+        
+        oauth = OAuth2Session(client_id, scope=scopes, redirect_uri=redirect_uri)
+        base_url = "https://id.twitch.tv/oauth2/authorize"
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": " ".join(scopes),
+            "response_type": "token",
+            "state": oauth._state,
+        }
+        authorization_url = f"{base_url}?{urlencode(params)}"
+
+        print("Visit the following URL to authorize your application, make sure it's for your bot:")
+        print(authorization_url)
+
+        # Step 2: User authorizes the application and provides the authorization code
+        authorization_code = input('Enter the authorization code from the url return http://localhost:3000/?code={CODEFROMEHERE}scope=whispers%3Aread+whispers%3Aedit&state=asdfasdfasdf: ')
+
+        # Now we can use the access token to authenticate API requests
+        return authorization_code
 
 
 if __name__ == "__main__":
-    TwitchBot()
+    MultiChannelTwitchBot()

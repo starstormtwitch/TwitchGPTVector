@@ -4,15 +4,9 @@ Twitch Bot for generating messages based on GPT models and VectorDB
 
 ---
 
-## What's new
-
-No longer need to download the models yourself, should download them on startup
-
----
-
 ## Explanation
 
-When the bot starts, it listens to chat messages in the channel listed in the settings.json file. It learns from any chat message that is talking directly to the bot and that is not a question. When someone requests a message to be generated, a GPT model using VectorDB will generate a sentence based on the learned data. Note that the bot is unaware of the meaning of any of its inputs and outputs. This means it can use bad language if it was taught to use bad language by people in chat. You can add a list of banned words it should never learn or say. Use at your own risk.
+When the bot starts, it listens to chat messages in the channels listed in the settings.json file. It learns from any chat message that is talking directly to the bot and that is not a question. When someone requests a message to be generated, a GPT model using VectorDB will generate a sentence based on the learned data. Note that the bot is unaware of the meaning of any of its inputs and outputs. This means it can use bad language if it was taught to use bad language by people in chat. You can add a list of banned words it should never learn or say. Use at your own risk.
 ---
 
 ## How it works
@@ -114,17 +108,20 @@ This bot is controlled by a `settings.json` file, which has the following struct
 {
   "Host": "irc.chat.twitch.tv",
   "Port": 6667,
-  "Channel": "#<channel>",
+  "Channels": ["#<channel1>", "#<channel2>"],
   "Nickname": "<name>",
-  "Authentication": "oauth:<twitchauth>",
-  "OpenAIKey": "<openAIoauth>",
+  "Authentication": "oauth:<auth>",
   "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],
   "AllowedUsers": [],
   "Cooldown": 20,
+  "KeyLength": 2,
+  "MaxSentenceWordAmount": 25,
+  "MinSentenceWordAmount": -1,
   "HelpMessageTimer": 18000,
   "AutomaticGenerationTimer": -1,
   "WhisperCooldown": true,
   "EnableGenerateCommand": true,
+  "SentenceSeparator": " - ",
   "AllowGenerateParams": true,
   "GenerateCommands": ["!generate", "!g"]
 }
@@ -134,11 +131,9 @@ This bot is controlled by a `settings.json` file, which has the following struct
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | `Host`                     | The URL that will be used. Do not change.                                                                                                                                                                                                    | `"irc.chat.twitch.tv"`                                  |
 | `Port`                     | The Port that will be used. Do not change.                                                                                                                                                                                                   | `6667`                                                  |
-| `Channel`                  | The Channel that will be connected to.                                                                                                                                                                                                       | `"#Starstorm"`                                           |
+| `Channels`                 | List of Channels that will be connected to.                                                                                                                                                                                                       | `"#Starstorm"`                                           |
 | `Nickname`                 | The Username of the bot account.                                                                                                                                                                                                             | `"Starstorm_v2"`                                            |
-| `Authentication`           | The OAuth token for the bot account.                                                                                                                  | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
-| `ClientID`                 | The authentication key for pulling emotes, and other things we can't do without registering with twitch. You will need to go to https://dev.twitch.tv/console/apps/create and create a application.                                                                                                               | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |                                                                                                                                                                                             | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
-| `OpenAIAuth`               | The authentication key for open ai. You will need to go to https://platform.openai.com/account/api-keys and create an account.                                                                                                                                                                                                         | `"asdfasdfasdf"`                |
+| `Authentication`           | The OAuth token for the bot account.                                                                                                                                                                                                         | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
 | `DeniedUsers`              | The list of (bot) accounts whose messages should not be learned from. The bot itself it automatically added to this.                                                                                                                         | `["StreamElements", "Nightbot", "Moobot", "Marbiebot"]` |
 | `AllowedUsers`             | A list of users with heightened permissions. Gives these users the same power as the channel owner, allowing them to bypass cooldowns, set cooldowns, disable or enable the bot, etc.                                                        | `["loltyler1", "starstorm"]`                                 |
 | `Cooldown`                 | A cooldown in seconds between successful generations. If a generation fails (eg inputs it can't work with), then the cooldown is not reset and another generation can be done immediately.                                                   | `20|
@@ -164,9 +159,12 @@ Words can also be added or removed from the blacklist via whispers, as is descri
 ## Requirements
 
 - [Python 3.6+](https://www.python.org/downloads/)
-- [pip](https://pip.pypa.io/en/stable/installation/)
 - [Module requirements](requirements.txt)
   - Install these modules using `pip install -r requirements.txt` in the commandline.
----
 
-Credits to CubieDev, this was originally his github project i repurposed: https://github.com/tomaarsen/TwitchMarkovChain
+
+Additionally, you'll need to have the GPT model files and access to the Vector DB for the bot to function correctly.
+whichever model you want from https://nlp.stanford.edu/projects/glove/
+spacy en_core_web_sm
+https://github.com/spotify/annoy
+---

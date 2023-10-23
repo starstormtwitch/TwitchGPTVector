@@ -2,7 +2,7 @@
     "Host": "irc.chat.twitch.tv",
     "Port": 6667,
     "Channel": "#loltyler1",
-    "Nickname": "put your bots name here",
+    "Nickname": "put your bots name here (must be existing account)",
     "Authentication": "put your bot oauth here",
     "OpenAIKey": "put the key for your open ai account here",
     "DeniedUsers": [

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class SettingsData(TypedDict):
     Host: str
     Port: int
-    Channel: str
+    Channels: str
     Nickname: str
     Authentication: str
     ClientID: str
@@ -31,9 +31,9 @@ class Settings:
     DEFAULTS: SettingsData = {
         "Host": "irc.chat.twitch.tv",
         "Port": 6667,
-        "Channel": "#StarStorm",
+        "Channels": ["#StarStorm"],
         "Nickname": "StarStorm_v2",
-        "Authentication": "{put your twitch oauth here}",
+        "Authentication": "{put your oauth here}",
         "ClientID": "{go to https://dev.twitch.tv/console/apps/create and create an app}",
         "OpenAIKey": "{put your openai auth here}",
         "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],
@@ -194,12 +194,12 @@ class Settings:
             f.write(json.dumps(data, indent=4, separators=(",", ": ")))
 
     @staticmethod
-    def get_channel() -> str:
-        """Get the "Channel" value from the settings file.
+    def get_channels() -> List[str]:
+        """Get the "Channels" value from the settings file.
 
         Returns:
-            str: The name of the Channel described in the settings file. 
-                Stripped of "#" and converted to lowercase.
+            List[str]: A list of channel names described in the settings file. 
+                Each channel is stripped of "#" and converted to lowercase.
         """
         settings = Settings.read_settings()
-        return settings["Channel"].replace("#", "").lower()
+        return [channel.replace("#", "").lower() for channel in settings["Channels"]]
