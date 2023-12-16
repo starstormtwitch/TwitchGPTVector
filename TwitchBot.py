@@ -335,7 +335,7 @@ class TwitchBot(commands.Bot):
         chat_data.sort(key=lambda x: (x['distance'], -x['timestamp']))
 
         # Create a new list with strings instead of objects
-        chat_strings = [f"{{{msg['user']}}}: {msg['message']}" for msg in chat_data]
+        chat_strings = [f"{msg['user']} said \"{msg['message']}\"" for msg in chat_data]
 
         print([f"{msg['distance']} | {{{msg['user']}}}: {msg['message']}" for msg in chat_data])
 
@@ -848,15 +848,15 @@ class TwitchBot(commands.Bot):
         new_messages = []
         new_similar_messages = []
 
-        similar_message_prompt = "\nFor context, here are related chat messages from the past: \n"
-        said_message_prompt = "\nCurrent chat:\n"
+        similar_message_prompt = "\nYou remember some chat messages from the past, and you draw inspiration from them.\n"
+        said_message_prompt = "\nHere's what going on in the chat currently.\n"
 
         while True:
             # Add a message from the current conversation if it doesn't exceed the token limit
             if reversed_messages:
                 temp_messages = [reversed_messages[0]] + new_messages
                 new_prompt = prompt + similar_message_prompt + said_message_prompt + ''.join(
-                    f"[CURRENT]{msg}\n" for msg in temp_messages + new_similar_messages)
+                    f"{msg}\n" for msg in temp_messages + new_similar_messages)
                 token_count = count_tokens(new_prompt)
                 if token_count > token_limit:
                     break
@@ -867,7 +867,7 @@ class TwitchBot(commands.Bot):
             if similar_messages:
                 temp_similar_messages = [similar_messages[0]] + new_similar_messages
                 new_prompt = prompt + similar_message_prompt + said_message_prompt + ''.join(
-                    f"[REMEMBERED]{msg}\n" for msg in new_messages + temp_similar_messages)
+                    f"An old chat message from the past, {msg}\n" for msg in new_messages + temp_similar_messages)
                 token_count = count_tokens(new_prompt)
                 if token_count > token_limit:
                     break
@@ -879,13 +879,13 @@ class TwitchBot(commands.Bot):
 
         system_prompt += similar_message_prompt
         for message in new_similar_messages:
-            system_prompt += f"[REMEMBERED]{message}\n"
+            system_prompt += f"An old chat message from the past, {message}\n"
 
         user_prompt += said_message_prompt
         for message in new_messages:
-            user_prompt += f"[CURRENT]{message}\n"
+            user_prompt += f"{message}\n"
 
-        user_prompt += "{Starstorm_v2}:"
+        user_prompt += "Now you respond with a message of your own."
 
         print(count_tokens(system_prompt))
         print(count_tokens(user_prompt))
