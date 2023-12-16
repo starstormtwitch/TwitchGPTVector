@@ -6,7 +6,7 @@ Twitch Bot for generating messages based on GPT models and VectorDB
 
 ## Explanation
 
-When the bot starts, it listens to chat messages in the channels listed in the settings.json file. It learns from any chat message that is talking directly to the bot and that is not a question. When someone requests a message to be generated, a GPT model using VectorDB will generate a sentence based on the learned data. Note that the bot is unaware of the meaning of any of its inputs and outputs. This means it can use bad language if it was taught to use bad language by people in chat. You can add a list of banned words it should never learn or say. Use at your own risk.
+When the bot starts, it listens to chat messages in the channels listed in the settings.json file. It "learns" from any chat message that is talking directly to the bot and that is not a question. When someone requests a message to be generated, a GPT model using VectorDB will generate a sentence based on the learned data. Note that the bot is unaware of the meaning of any of its inputs and outputs. This means it can use bad language if it was taught to use bad language by people in chat. You can add a list of banned words it should never learn or say. Use at your own risk.
 ---
 
 ## How it works
@@ -19,7 +19,7 @@ The bot processes chat messages, extracts their keywords and nouns, using those 
 
 ### Generation
 
-When a message is generated with !generate, the GPT model and VectorDB work together to create a message based on the learned data. The generated message will resemble the structure and content of the chat messages the bot has learned from.  It will use context from the last few minutes of chat, as well as some context from its long term database.
+When a message is generated with !generate or at the default automatic interval in the configuration, the GPT model and VectorDB work together to create a message based on the learned data. The generated message will resemble the structure and content of the chat messages the bot has learned from.  It will use context from the last few minutes of chat, as well as some context from its long term database.
 
 ## Commands
 
@@ -78,21 +78,20 @@ Which sets the cooldown between generations to 30 seconds.
 
 ### Moderator commands
 
-All of these commands must be whispered to the bot account.
 Moderators (and the broadcaster) can modify the blacklist to prevent the bot learning words it shouldn't.
-To add `word` to the blacklist, a moderator can whisper the bot:
+To add `word` to the blacklist, a moderator can message the bot:
 
 ```txt
 !blacklist <word>
 ```
 
-Similarly, to remove `word` from the blacklist, a moderator can whisper the bot:
+Similarly, to remove `word` from the blacklist, a moderator can message the bot:
 
 ```txt
 !whitelist <word>
 ```
 
-And to check whether `word` is already on the blacklist or not, a moderator can whisper the bot:
+And to check whether `word` is already on the blacklist or not, a moderator can message the bot:
 
 ```txt
 !check <word>
@@ -106,11 +105,8 @@ This bot is controlled by a `settings.json` file, which has the following struct
 
 ```json
 {
-  "Host": "irc.chat.twitch.tv",
-  "Port": 6667,
-  "Channels": ["#<channel1>", "#<channel2>"],
-  "Nickname": "<name>",
-  "Authentication": "oauth:<auth>",
+  "Channel": ["#<channelname>"]
+  "ClientID": "r0c41t53uclmbo6wfvpq4ngazs97lm",
   "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],
   "AllowedUsers": [],
   "Cooldown": 20,
@@ -129,11 +125,9 @@ This bot is controlled by a `settings.json` file, which has the following struct
 
 | **Parameter**              | **Meaning**                                                                                                                                                                                                                                  | **Example**                                             |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `Host`                     | The URL that will be used. Do not change.                                                                                                                                                                                                    | `"irc.chat.twitch.tv"`                                  |
-| `Port`                     | The Port that will be used. Do not change.                                                                                                                                                                                                   | `6667`                                                  |
-| `Channels`                 | List of Channels that will be connected to.                                                                                                                                                                                                       | `"#Starstorm"`                                           |
-| `Nickname`                 | The Username of the bot account.                                                                                                                                                                                                             | `"Starstorm_v2"`                                            |
-| `Authentication`           | The OAuth token for the bot account.                                                                                                                                                                                                         | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
+| `Channels`                 | Channel that will be connected to.                                                                                                                                                                                                       | `"#Starstorm"`                                           |
+| `ClientID`                 | The Client Id for the bot account. You can use starstorm_v2 which is the default, or you can create your own bot and add it's client id here: <https://dev.twitch.tv/console/apps/create>  Redirect url should be set to http://localhost:3000/                                                                                                                                                                                                     | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
+| `OpenAIKey`                | This is the openai api key that will be used to generate the messages.  You will have to sign up an account and then create an API key to put it here.  Here is the link to openai: <https://platform.openai.com/login?launch>                                                                                                                                                                                                     | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
 | `DeniedUsers`              | The list of (bot) accounts whose messages should not be learned from. The bot itself it automatically added to this.                                                                                                                         | `["StreamElements", "Nightbot", "Moobot", "Marbiebot"]` |
 | `AllowedUsers`             | A list of users with heightened permissions. Gives these users the same power as the channel owner, allowing them to bypass cooldowns, set cooldowns, disable or enable the bot, etc.                                                        | `["loltyler1", "starstorm"]`                                 |
 | `Cooldown`                 | A cooldown in seconds between successful generations. If a generation fails (eg inputs it can't work with), then the cooldown is not reset and another generation can be done immediately.                                                   | `20|

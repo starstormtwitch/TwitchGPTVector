@@ -8,11 +8,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class SettingsData(TypedDict):
-    Host: str
-    Port: int
     Channels: str
-    Nickname: str
-    Authentication: str
     ClientID: str
     OpenAIKey: str
     DeniedUsers: List[str]
@@ -29,13 +25,9 @@ class Settings:
     PATH = os.path.join(os.getcwd(), "settings.json")
     
     DEFAULTS: SettingsData = {
-        "Host": "irc.chat.twitch.tv",
-        "Port": 6667,
         "Channels": ["#StarStorm"],
-        "Nickname": "StarStorm_v2",
-        "Authentication": "{put your oauth here}",
-        "ClientID": "{go to https://dev.twitch.tv/console/apps/create and create an app}",
-        "OpenAIKey": "{put your openai auth here}",
+        "ClientID": "dpiv8i73e13tsruf3z40grs8okc7g1",# or go to https://dev.twitch.tv/console/apps/create and create an app for your own bot
+        "OpenAIKey": "{put your openai auth here, must sign up for account https://openai.com/blog/openai-api}",
         "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],
         "AllowedUsers": ["StarStorm"],
         "Cooldown": 15,
