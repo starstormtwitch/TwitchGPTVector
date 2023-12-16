@@ -105,8 +105,9 @@ This bot is controlled by a `settings.json` file, which has the following struct
 
 ```json
 {
-  "Channel": ["#<channelname>"]
-  "ClientID": "r0c41t53uclmbo6wfvpq4ngazs97lm",
+  "Channel": ["#starstorm"]
+  "ClientID": "exampleexampleexampleexample",
+  "ClientID": "exampleexampleexampleexample",
   "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],
   "AllowedUsers": [],
   "Cooldown": 20,
@@ -126,7 +127,8 @@ This bot is controlled by a `settings.json` file, which has the following struct
 | **Parameter**              | **Meaning**                                                                                                                                                                                                                                  | **Example**                                             |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | `Channels`                 | Channel that will be connected to.                                                                                                                                                                                                       | `"#Starstorm"`                                           |
-| `ClientID`                 | The Client Id for the bot account. You can use starstorm_v2 which is the default, or you can create your own bot and add it's client id here: <https://dev.twitch.tv/console/apps/create>  Redirect url should be set to http://localhost:3000/                                                                                                                                                                                                     | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
+| `ClientID`                 | The Client Id for the bot account. You must create your own bot and add it's client id here: <https://dev.twitch.tv/console/apps/create>  Redirect url should be set to http://localhost:3000/callback                                                                                                                                                                                                   | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
+| `ClientSecret`             | The Client Secret for the bot account, same place as above.                                                                                                                                                                                              | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
 | `OpenAIKey`                | This is the openai api key that will be used to generate the messages.  You will have to sign up an account and then create an API key to put it here.  Here is the link to openai: <https://platform.openai.com/login?launch>                                                                                                                                                                                                     | `"oauth:pivogip8ybletucqdz4pkhag6itbax"`                |
 | `DeniedUsers`              | The list of (bot) accounts whose messages should not be learned from. The bot itself it automatically added to this.                                                                                                                         | `["StreamElements", "Nightbot", "Moobot", "Marbiebot"]` |
 | `AllowedUsers`             | A list of users with heightened permissions. Gives these users the same power as the channel owner, allowing them to bypass cooldowns, set cooldowns, disable or enable the bot, etc.                                                        | `["loltyler1", "starstorm"]`                                 |

@@ -1078,6 +1078,7 @@ class TwitchBot(commands.Bot):
     def check_link(self, message: str) -> Match[str] | None:
         return self.link_regex.search(message)
 
+
 class MultiChannelTwitchBot:
     bots = {}
 
@@ -1115,6 +1116,7 @@ class MultiChannelTwitchBot:
         print("Loading global settings")
         self.channels = settings["Channels"]
         self.client_id = settings["ClientID"]
+        self.client_secret = settings["ClientSecret"]
         self.denied_users = [user.lower() for user in settings["DeniedUsers"]]
         self.allowed_users = [user.lower() for user in settings["AllowedUsers"]]
         self.cooldown = settings["Cooldown"]
@@ -1129,11 +1131,26 @@ class MultiChannelTwitchBot:
     def start_local_server(self):
         app.run(port=3000)
 
+    def exchange_code_for_token(self, client_id, client_secret, code):
+        url = 'https://id.twitch.tv/oauth2/token'
+        data = {
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'code': code,
+            'grant_type': 'authorization_code',
+            'redirect_uri': 'http://localhost:3000/callback'
+        }
+        response = requests.post(url, data=data)
+        if response.ok:
+            return response.json()['access_token']
+        else:
+            return None
+
     def GetTwitchAuthorization(self, client_id) -> str:
         global check_token_populated  # Declare the use of the global variable
 
         # Twitch OAuth URLs
-        redirect_uri = 'http://localhost:3000/'
+        redirect_uri = 'http://localhost:3000/callback'
 
         # Scopes that you want to request
         scopes = ["chat:read",
@@ -1167,8 +1184,9 @@ class MultiChannelTwitchBot:
         while check_token_populated is None:
             pass
 
-        return check_token_populated
+        access_token = self.exchange_code_for_token(self.client_id, self.client_secret, check_token_populated)
 
+        return access_token
 
 if __name__ == "__main__":
     MultiChannelTwitchBot()
