@@ -1,4 +1,11 @@
 {
+    "Host": "irc.chat.twitch.tv",
+    "Port": 6667,
+    "Channels": {
+		"#TrackingTyler1": true,
+		"#loltyler1": false
+		},
+    "Nickname": "starstorm_v2",
     "Channel": ["#starstorm"],
     "ClientID": "dpiv8i73e13tsruf3z40grs8okc7g1", 
     "OpenAIKey": "put your openai auth here, must sign up for account https://openai.com/blog/openai-api",

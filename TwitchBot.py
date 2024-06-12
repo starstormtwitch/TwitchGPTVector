@@ -33,6 +33,11 @@ from torch import FloatTensor
 import fasttext as FastText
 from FlagEmbedding import FlagModel
 from twitchio.ext import commands
+import nltk
+from nltk.corpus import words
+
+# Download the word list if it's not already downloaded
+nltk.download('words')
 
 from Log import Log
 Log(__file__)
@@ -63,7 +68,7 @@ print(os.environ['CUDA_VISIBLE_DEVICES'])
 
 
 #you will probably need to download this model from spacy, you can also use whichever one you want here.
-nlp = spacy.load("en_core_web_sm")
+nlp = spacy.load("en_core_web_sm") 
 
 print("Loading model, this may take a while!")
 
@@ -74,6 +79,8 @@ pretrained_flag = FlagModel('BAAI/bge-large-en-v1.5',
 #if you want to use an existing vector file in a different spot and retrain the vectors:
 preload_vector_path = r""
 
+not_emote_list = {"lol", "vibe"}
+    
 embedding_size = 1024
 
 rake_nltk_var = Rake()
@@ -84,12 +91,6 @@ class TimedList(list):
         list.append(self, item)
         t = threading.Thread(target=ttl_set_remove, args=(self, item, ttl))
         t.start()
-  
-all_emotes = []
-my_emotes = []
-lastSaidMessage = ""      
-nounList = TimedList()
-saidMessages = TimedList()
 
 class SecondsTimer:
     def __init__(self):
@@ -110,9 +111,6 @@ class SecondsTimer:
         """Reset the timer."""
         self.start_time = time.time()  # reset the start time to now
         self.elapsed = 0  # reset the elapsed time
-
-timer = SecondsTimer()
-timer.start()
 
 # Create a character set with lowercase letters, digits, and some special characters
 char_set = string.ascii_lowercase + string.digits + "!@#$%^&*()_-+=<>?/|.,:;[]{}"
@@ -246,7 +244,7 @@ def most_frequent_substring(list_in, max_key_only = True):
     if len(list_in) < 1:
       return None
 
-    print("Finding most frequent substring:")
+    #print("Finding most frequent substring:")
     for word in list(set(list_in)): #get unique values to speed up
         for i in range(len(word)):
             # Look up the whole word, then one less letter, sequentially
@@ -265,7 +263,7 @@ def most_frequent_substring(list_in, max_key_only = True):
     if not max_key_only:
         return keys
     result = max(keys, key=keys.get)
-    print(result)
+    #print(result)
     return max(keys, key=keys.get)   
 
 def most_frequent_word(List):
@@ -288,11 +286,26 @@ def most_frequent_word(List):
 def ttl_set_remove(my_set, item, ttl):
     time.sleep(ttl)
     my_set.remove(item)
-        
-def message_to_vector(message):
+
+def timestamp_weight(current_time, message_time):
+    decay_period = 3600 * 24 * 30
+    time_diff = current_time - message_time
+    decay_factor = time_diff / decay_period
+    # Apply a cutoff to prevent overflow in the exponential calculation
+    if decay_factor > 20:
+        decay_factor = 0
+    return 1 / (1 + math.exp(decay_factor))
+
+def adjust_vector_by_timestamp(original_vector, timestamp):
+    timestamp = float(timestamp)
+    weight = timestamp_weight(time.time(), timestamp)
+    return [x * weight for x in original_vector]
+    
+def message_to_vector(message, current_time):
     global pretrained_flag
     sentence_vector = pretrained_flag.encode(message)
-    return sentence_vector
+    adjusted_query_vector = adjust_vector_by_timestamp(sentence_vector, current_time)
+    return adjusted_query_vector
 
 def save_chat_data(data_file, chat_data):
     with open(data_file, 'a', encoding='utf-8') as f:
@@ -305,26 +318,20 @@ def append_chat_data(data_file, username, timestamp, message, vector):
         vector_str = ",".join(str(x) for x in vector)
         f.write(f"{timestamp}\t{username}\t{message}\t{vector_str}\n")
 
-class TwitchBot(commands.Bot):
-    global_index = None
-    data_file = 'broke'
-    index_file = 'index.ann'
-    access_token = ''
-    broadcaster_id = ''
-    user_id = ''
-    new_sentence_count = 0
-    training = False
+def get_timestamp_from_twitch(twitch_ts):
+    # Convert from string to integer (milliseconds), then to float (seconds)
+    second_ts = float(twitch_ts) / 1000.0
+    return second_ts
     
+class TwitchBot(commands.Bot):
     def get_all_emotes(self, channelname):
-        global my_emotes
-        global all_emotes
         print("Getting emotes for 7tv, bttv, ffz")
         response = requests.get(
             f"https://emotes.adamcy.pl/v1/channel/{channelname[1:]}/emotes/7tv.bttv.ffz"
         )
-        my_emotes = [emote["code"] for emote in response.json()]
-        all_emotes = [emote["code"] for emote in response.json()]
-        my_emotes = [emote for emote in my_emotes]
+        self.my_emotes = [emote["code"] for emote in response.json()]
+        self.all_emotes = [emote["code"] for emote in response.json()]
+        self.my_emotes = [emote for emote in self.my_emotes]
         
         print("Getting emotes for global twitch")
         # Get emoticon set IDs for the channel
@@ -337,8 +344,8 @@ class TwitchBot(commands.Bot):
         print(response)
         emoticonsGlobal = response.json()['data']
         for emote in emoticonsGlobal:
-                my_emotes.append(str(emote['name']))
-                all_emotes.append(str(emote['name']))
+                self.my_emotes.append(str(emote['name']))
+                self.all_emotes.append(str(emote['name']))
                 
         #get sub emotes:
         print("Getting emotes for twitch sub")
@@ -351,11 +358,11 @@ class TwitchBot(commands.Bot):
         print(response)
         emoticons = response.json()['data']
         for emote in emoticons:
-                all_emotes.append(str(emote['name']))
+                self.all_emotes.append(str(emote['name']))
 
         
         #get if sub or not
-        url = f'https://api.twitch.tv/helix/subscriptions/user?broadcaster_id={self.broadcaster_id}&user_id={self.user_id}'
+        url = f'https://api.twitch.tv/helix/subscriptions/user?broadcaster_id={self.broadcaster_id}&user_id={self.username_id}'
         headers = {
             'Client-ID': self.ClientId,
             'Authorization': f'Bearer {self.access_token}'
@@ -366,11 +373,11 @@ class TwitchBot(commands.Bot):
             #if true get sub emotes because we are a sub!
             if len(data) > 0:
                 for emote in emoticons:
-                        my_emotes.append(str(emote['name']))
+                        self.my_emotes.append(str(emote['name']))
         except Exception as error:
             logger.warning(f"[{error}] upon getting subbed. Ignoring.")
-        my_emotes = [emote for emote in my_emotes if emote.isalnum()]
-        print(' '.join(my_emotes))
+        self.my_emotes = [emote for emote in self.my_emotes if emote.isalnum()]
+        print(' '.join(self.my_emotes))
 
     
     def GetTwitchAuthorization(self):
@@ -403,7 +410,6 @@ class TwitchBot(commands.Bot):
 
     def GetUserAndBroadcasterId(self):
         print("Getting user id")
-        user_id = ''
         url = f'https://api.twitch.tv/helix/users?login={self.nickname}'
         headers = {
             'Client-ID': self.ClientId,
@@ -412,11 +418,11 @@ class TwitchBot(commands.Bot):
         response = httpx.get(url, headers=headers)
         data = response.json()
         if data['data']:
-            self.user_id = data['data'][0]['id']
+            self.username_id = data['data'][0]['id']
         else:
             raise ValueError("could not pull userid") 
 
-        url = f'https://api.twitch.tv/helix/users?login={self.chan[1:]}'
+        url = f'https://api.twitch.tv/helix/users?login={self.this_channel[1:]}'
         headers = {
             'Client-ID': self.ClientId,
             'Authorization': f'Bearer {self.access_token}'
@@ -425,6 +431,7 @@ class TwitchBot(commands.Bot):
         data = response.json()
         if data['data']:
             self.broadcaster_id = data['data'][0]['id']
+            print(f"broadcaster_id: {data['data'][0]['id']}")
         else:
             raise ValueError("could not pull broadcaster id")
         
@@ -449,41 +456,50 @@ class TwitchBot(commands.Bot):
     
         # Convert the chat message into a vector only keywords
         subjectNounConcat = " ".join(nounListToAdd)
-        print(f"{datetime.datetime.now()} - vectorizing for memory: {subjectNounConcat}")
-        vector = message_to_vector(subjectNounConcat)
+        #print(f"{datetime.datetime.now()} - vectorizing for memory: {subjectNounConcat}")
+        vector = message_to_vector(subjectNounConcat, timestamp)
     
         # Append the new chat message to the chat data file
         append_chat_data(data_file, username, timestamp, message, vector)
-                
+       
+
     def find_similar_messages(self, query, index, data_file, num_results=10):
         # Convert the query into a vector
-        print(query)
-        query_vector = message_to_vector(query)
-        print(query_vector)
+        print(data_file)
+        current_time = time.time()
+        query_vector = message_to_vector(query, current_time)
+        #print(query_vector)
 
         # Get a larger number of nearest neighbors to filter later
-        num_neighbors = num_results * 5
+        num_neighbors = num_results * 20
         nearest_neighbors = self.global_index.get_nns_by_vector(query_vector, num_neighbors, include_distances=True)
 
         # Unpack the neighbors and their distances
         neighbor_indices = []
         neighbor_distances = []
         neighbor_indices, neighbor_distances = nearest_neighbors
-
+    
+        # Minimal difference between distances to consider messages as distinct
+        distance_delta_threshold = 0.05
+        
         chat_data = []
+        previous_distance = None
         with open(data_file, 'r', encoding='utf-8') as f:
             for idx, line in enumerate(f):
                 if idx in neighbor_indices:
-                    parts = line.rstrip().split('\t')
                     i = neighbor_indices.index(idx)  # Find the corresponding index in neighbor_indices
-                    dist = neighbor_distances[i]
-                    chat_data.append({
-                        'user': parts[1],
-                        'timestamp': int(math.ceil(float(parts[0]))),
-                        'message': parts[2],
-                        'distance': dist
-                    })
+                    current_distance = neighbor_distances[i]
 
+                    if previous_distance is None or abs(current_distance - previous_distance) >= distance_delta_threshold:
+                        parts = line.rstrip().split('\t')
+                        chat_data.append({
+                            'user': parts[1],
+                            'timestamp': int(math.ceil(float(parts[0]))),
+                            'message': parts[2],
+                            'distance': current_distance
+                        })
+                    # Update previous_distance to the current one
+                    previous_distance = current_distance
 
         # Sort the filtered data by Annoy distance (ascending) and then by timestamp (descending)
         chat_data.sort(key=lambda x: (x['distance'], -x['timestamp']))
@@ -491,8 +507,6 @@ class TwitchBot(commands.Bot):
         # Create a new list with strings instead of objects
         chat_strings = [f"{{{msg['user']}}}: {msg['message']}" for msg in chat_data]
 
-        print([f"{msg['distance']} | {{{msg['user']}}}: {msg['message']}" for msg in chat_data])
-        
         # Return the top num_results messages
         return chat_strings[:num_results]
 
@@ -509,7 +523,7 @@ class TwitchBot(commands.Bot):
             if success:
                 return i
             else:
-                logger.info("Attempted to output automatic generation message, but there is not enough learned information yet.")
+                logger.info("failed generate")
         return None
     
     def find_phrase_to_use(self, phraseList):
@@ -586,7 +600,7 @@ class TwitchBot(commands.Bot):
             
         return pretrained_flag
 
-    def setup(self, data_file, index_file, num_trees=10):
+    def setup(self, data_file, index_file, num_trees=100):
         
         index = AnnoyIndex(1024, 'angular')
 
@@ -608,7 +622,8 @@ class TwitchBot(commands.Bot):
                 subject_nouns = extract_subject_nouns(default_message, default_username)
                 
                 # Convert the chat message into a vector only keywords
-                vector = message_to_vector(" ".join(subject_nouns))
+                current_time = time.time()
+                vector = message_to_vector(" ".join(subject_nouns), current_time)
 
                 # Add the default entry to the chat data file
                 append_chat_data(data_file, default_username, default_timestamp, default_message, vector)
@@ -621,14 +636,16 @@ class TwitchBot(commands.Bot):
                         for line in file:
                             parts = line.strip().split("\t")
                             if len(parts) == 4:
+                                timestamp = parts[0]
                                 username = parts[1].replace('{', '').replace('}', '').replace(':', '')
                                 message = parts[2]
                                 if not is_information_question(message):
                                     subject_nouns = extract_subject_nouns(message, username)
                                     # Check if it's an interesting message before proceeding
                                     if is_interesting(message, subject_nouns, rake_nltk_var):  
-                                        vector = message_to_vector(" ".join(subject_nouns))
-                                        append_chat_data(data_file, username, default_timestamp, message, vector)
+                                        python_ts = get_timestamp_from_twitch(timestamp)
+                                        vector = message_to_vector(" ".join(subject_nouns), python_ts)
+                                        append_chat_data(data_file, username, python_ts, message, vector)
                                         message_count += 1  
                                         if message_count % 100 == 0:
                                             print(f"{datetime.datetime.now()} - {message_count} messages have been preloaded.")
@@ -661,17 +678,53 @@ class TwitchBot(commands.Bot):
         return index
 
 
-    def __init__(self):
+    def __init__(self, channel: str, host: str, port: int, nick: str, auth: str, 
+                 client_id: str, denied_users: List[str], allowed_users: List[str], 
+                 cooldown: int, help_message_timer: int, automatic_generation_timer: int,
+                 whisper_cooldown: int, enable_generate_command: bool, allow_generate_params: bool,
+                 generate_commands: Tuple[str], openai_key: str, twitchaccess_token: str, openai_client, run_while_live: bool):
+
+        self.global_index = None
+        self.data_file = 'broke'
+        self.index_file = 'index.ann'
+        self.access_token = ''
+        self.broadcaster_id = ''
+        self.username_id = ''
+        self.new_sentence_count = 0
+        self.training = False
+        self.all_emotes = []
+        self.my_emotes = []
+        self.lastSaidMessage = ""      
+        self.nounList = TimedList()
+        self.saidMessages = TimedList()
+        self.timer = SecondsTimer()
+        
+        self.this_channel = channel
+        self.host = host
+        self.port = port
+        self.nickname = nick
+        self.auth = auth
+        self.while_live = run_while_live
+        self.ClientId = client_id
+        self.denied_users = denied_users
+        self.allowed_users = allowed_users
+        self.cooldown = cooldown
+        self.access_token = twitchaccess_token
+        self.help_message_timer = help_message_timer
+        self.automatic_generation_timer = automatic_generation_timer
+        self.whisper_cooldown = whisper_cooldown
+        self.enable_generate_command = enable_generate_command
+        self.allow_generate_params = allow_generate_params
+        self.generate_commands = generate_commands
         self.initialize_variables()
         self.setup_mod_list_and_blacklist()
-        self.read_settings()
-        self.access_token = self.GetTwitchAuthorization()
         self.GetUserAndBroadcasterId()
         self.setup_database_and_vectors()
         self.setup_timers()
-        self.get_all_emotes(self.chan)
+        self.get_all_emotes(self.this_channel)
+        self.client = openai_client
         self.start_websocket_bot()
-
+        self.timer.start()
 
     def initialize_variables(self):
         self.prev_message_t = 0
@@ -681,37 +734,10 @@ class TwitchBot(commands.Bot):
 
     def setup_mod_list_and_blacklist(self):
         self.set_blacklist()
-
-    def read_settings(self):
-        Settings(self)
-    
-    def set_settings(self, settings: SettingsData):
-        """Fill class instance attributes based on the settings file.
-        Args:
-            settings (SettingsData): The settings dict with information from the settings file.
-        """
-        self.host = settings["Host"]
-        self.port = settings["Port"]
-        self.chan = settings["Channels"][0]
-        self.nickname = settings["Nickname"]
-        self.auth = settings["Authentication"]
-        self.ClientId = settings["ClientID"]
-        self.denied_users = [user.lower() for user in settings["DeniedUsers"]] + [self.nickname.lower()]
-        self.allowed_users = [user.lower() for user in settings["AllowedUsers"]]
-        self.cooldown = 5 # settings["Cooldown"]
-        self.help_message_timer = settings["HelpMessageTimer"]
-        self.automatic_generation_timer = settings["AutomaticGenerationTimer"]
-        self.whisper_cooldown = settings["WhisperCooldown"]
-        self.enable_generate_command = settings["EnableGenerateCommand"]
-        self.allow_generate_params = settings["AllowGenerateParams"]
-        self.generate_commands = tuple(settings["GenerateCommands"])
-        self.client = OpenAI(
-          base_url="https://openrouter.ai/api/v1",
-          api_key=settings["OpenAIKey"])
-
+        
     def setup_database_and_vectors(self):
-        self.data_file = f'vectors_{self.chan.replace("#", "")}.npy'
-        self.index_file = f'index_{self.chan.replace("#", "")}.npy'
+        self.data_file = f'vectors_{self.this_channel.replace("#", "")}.npy'
+        self.index_file = f'index_{self.this_channel.replace("#", "")}.npy'
         self.global_index = self.setup(self.data_file, self.index_file)
 
     def setup_timers(self):
@@ -732,36 +758,9 @@ class TwitchBot(commands.Bot):
         super().__init__(
             token=self.auth,  # OAuth Token
             prefix='!',  # Command prefix
-            initial_channels=[self.chan]  # List of channels the bot will join
+            initial_channels=[self.this_channel]  # List of channels the bot will join
         )
-
-    def check_retrain_model(self, index_file):
-        global pretrained_flag
-        retrain_threshold = 1000
-        self.new_sentence_count += 1
-        if self.new_sentence_count >= retrain_threshold and not self.training:
-            self.training = True
-            self.new_sentence_count = 0
-            self.train_model(self.data_file)
-            # Load the Annoy index
-            annoy_index = AnnoyIndex(1024, 'angular')
-            annoy_index.load(index_file)
-
-            # Update the embeddings in the Annoy index
-            for i in range(annoy_index.get_n_items()):
-                # Get the sentence from the data file
-                sentence = sentences[i]
-
-                # Compute the new FastText embedding for the sentence
-                new_embedding = message_to_vector(' '.join(sentence))
-
-                # Update the Annoy index with the new embedding
-                annoy_index.set_item(i, new_embedding)
-
-            # Save the updated Annoy index
-            annoy_index.save(index_file)
-            self.training = False
-
+        
     def handle_successful_join(self, m):
         logger.info(f"Successfully joined channel: #{m.channel}")
 ##        logger.info("Fetching mod list...")
@@ -878,11 +877,11 @@ class TwitchBot(commands.Bot):
                 print('responding')
                 sentence, success = self.generate(params, " ".join(params))
             logger.info(sentence)
-            saidMessages.append("{" +self.nickname +"}: " + sentence, 360)
+            self.saidMessages.append("{" +self.nickname +"}: " + sentence, 360)
             await self.send(sentence)
         else:
-            self.send_whisper(m.author.name, f"Cooldown hit: {self.cooldown - timer.get_time()} out of {self.cooldown:.0f}s remaining. !nopm to stop these cooldown pm's.")
-            logger.info(f"Cooldown hit with {self.cooldown - timer.get_time():0.2f}s remaining.")
+            self.send_whisper(m.author.name, f"Cooldown hit: {self.cooldown - self.timer.get_time()} out of {self.cooldown:.0f}s remaining. !nopm to stop these cooldown pm's.")
+            logger.info(f"Cooldown hit with {self.cooldown - self.timer.get_time():0.2f}s remaining.")
 
     def handle_blacklist_command(self, m):
         if len(m.content.split()) == 2:
@@ -936,10 +935,13 @@ class TwitchBot(commands.Bot):
                 m.author.name,
                 "Please add exactly 1 integer parameter, eg: !setcd 30.",
             )
+            
 
     async def handle_conversation_info_gathering(self, m, cur_time):
         #add to context history
-        saidMessages.append("{"+m.author.name+"}: " +  m.content, 360)
+        if m.author is None:
+            return;
+        self.saidMessages.append("{"+m.author.name+"}: " +  m.content, 360)
 
         #skip any ignored user messages:
         if m.author.name.lower() in self.denied_users:
@@ -947,7 +949,7 @@ class TwitchBot(commands.Bot):
         
         #extract meaningful words from message
         sentence = m.content.lower().replace("@"+self.nickname.lower(), '').replace(self.nickname.lower(), '').replace('bot', '')
-        cleaned_sentence = remove_list_from_string(all_emotes, sentence)
+        cleaned_sentence = remove_list_from_string(self.all_emotes, sentence)
 
         is_interesting_message = False;
 
@@ -958,55 +960,58 @@ class TwitchBot(commands.Bot):
         # Extract subject nouns
         nounListToAdd = extract_subject_nouns(cleaned_sentence, username=m.author.name)
         
-        print(f"{datetime.datetime.now()} - Noun list generated: {nounListToAdd}")
+        #print(f"{datetime.datetime.now()} - Noun list generated: {nounListToAdd}")
 
         for noun in nounListToAdd:
-            nounList.append(noun, 120)
-        print(f"{datetime.datetime.now()} - Current Noun list: {nounList}")
+            self.nounList.append(noun, 120)
+        #print(f"{datetime.datetime.now()} - Current Noun list: {self.nounList}")
                 
         # Check if the message is interesting
         is_interesting_message = is_interesting(cleaned_sentence, nounListToAdd, rake_nltk_var)
 
         #Generate response only if bot is mentioned, and not on cooldown
         
-        print('timer check')
-        print(self.cooldown)
-        print(timer.get_time())
-        if (self.nickname.lower() in m.content.lower()) and self.cooldown < timer.get_time():
-            timer.reset()
+        #print('timer check')
+        if (self.nickname.lower() in m.content.lower()) and self.cooldown < self.timer.get_time():
+            self.timer.reset()
             #for tok in doc:
                 #print(f"{datetime.datetime.now()} - Token Text: {tok.text}, Dependency: {tok.dep_}, POS: {tok.pos_}")
             return await self.RespondToMentionMessage(m, nounListToAdd, cleaned_sentence)
         elif is_interesting_message:
             print(f"{datetime.datetime.now()} - Saving interesting message to history: {m.content}")
-            self.add_message_to_index(self.data_file, m.author.name.lower(), m.tags['tmi-sent-ts'], m.content, nounListToAdd)
+            self.add_message_to_index(self.data_file, m.author.name.lower(), get_timestamp_from_twitch(m.tags['tmi-sent-ts']), m.content, nounListToAdd)
         #possibly retrain model if enough stuff has been added:
         #retrain_thread = threading.Thread(target=self.check_retrain_model, args=(self.index_file,))
         #retrain_thread.start()
         
 
     async def RespondToMentionMessage(self, m, nounListToAdd, cleanedSentence):
-        print('Answering to mention. ')
+        print(f'{datetime.datetime.now()} - Answering to mention. ')
         if not nounListToAdd:
             nounListToAdd.append(cleanedSentence)
             
-        if len(m.content.split()) >= 5 and not is_information_question(remove_list_from_string(all_emotes, m.content.lower())):
+        if len(m.content.split()) >= 5 and not is_information_question(remove_list_from_string(self.all_emotes, m.content.lower())):
             print(f"{datetime.datetime.now()} - Saving interesting mention to history: {m.content}")
             self.add_message_to_index(self.data_file, m.author.name.lower(), m.tags['tmi-sent-ts'], m.content, nounListToAdd)
 
         if self._enabled:
             params = spacytokenize(" ".join(nounListToAdd) if isinstance(nounListToAdd, list) else nounListToAdd)
-            sentence, success = self.generate(params, cleanedSentence)
-            saidMessages.append("{" +self.nickname +"}: " + sentence, 360)
-            if success:
-                self.prev_message_t = time.time()
-                try:
-                    await self.send(sentence)
-                    logger.info("Said Message")
-                except Exception as error:
-                    logger.warning(f"[{error}] upon sending automatic generation message. Ignoring.")
-            else:
-                logger.info("Attempted to output automatic generation message, but there is not enough learned information yet.")
+            run = True
+            if not self.while_live:
+                is_live = self.GetIfStreamerLive()
+                run = not is_live
+            if run:
+                sentence, success = self.generate(params, cleanedSentence)
+                self.saidMessages.append("{" +self.nickname +"}: " + sentence, 360)
+                if success:
+                    self.prev_message_t = time.time()
+                    try:
+                        await self.send(sentence)
+                        logger.info("Said Message")
+                    except Exception as error:
+                        logger.warning(f"[{error}] upon sending automatic generation message. Ignoring.")
+                else:
+                    logger.info("Attempted to output automatic generation message, but there is not enough learned information yet.")
         return
 
     async def handle_privmsg_commands(self, m, cur_time):
@@ -1024,8 +1029,6 @@ class TwitchBot(commands.Bot):
 
         if self.check_if_generate(m.content):
             self.handle_generate_command(m, cur_time)
-        elif self.check_if_other_command(m.content):
-            print('command')
         elif self.check_link(m.content):
             print('link')
         else:
@@ -1046,7 +1049,7 @@ class TwitchBot(commands.Bot):
 
     async def event_ready(self):
         print(f'Logged in as {self.nickname}')
-        self.channel = self.get_channel(self.chan[1:])
+        self.channel = self.get_channel(self.this_channel[1:])
         self.loop.create_task(self.start_automatic_generation())
 
     def message_to_json(self, message):
@@ -1063,67 +1066,77 @@ class TwitchBot(commands.Bot):
     
     async def event_message(self, message):
         try:
+            #print(self.this_channel)
+            #print(self.saidMessages)
             m = message
-            print(self.message_to_json(m))
             cur_time = time.time()
             await self.handle_privmsg_commands(m, cur_time)
         except Exception as e:
             logger.exception(e)
              
-    def closest_emote(self, emote, emote_set):
+    def closest_emote(self, emote, emote_set) -> Tuple[str, bool]:
         emote_lower = emote.lower()
+
+        # Check if the emote is a normal word
+        if emote_lower in words.words():
+            return emote, False # Return the original emote if it's a normal word
+        
+        # Check if the emote is a normal word
+        if emote_lower in not_emote_list:
+            return emote, False # Return the original emote if it's a normal word
+
         matches = [e for e in emote_set if e.lower() == emote_lower]
         if not matches:
-            return None
+            return emote, False
         # If there's an exact match, return it, otherwise return the first match
         if emote in matches:
-            return emote
-        return sorted(matches, key=lambda x: (len(x), x))[0]
+            return emote, True
+        return sorted(matches, key=lambda x: (len(x), x))[0], True
 
     def reconstruct_sentence(self, text):
         doc = nlp(text)
-        tokens = list(doc)
         reconstructed_sentence = ""
 
-        for i, token in enumerate(tokens):
-            if token.is_space:
-                continue
+        for token in doc:
+            # Convert token text and self.all_emotes to lowercase for comparison
+            is_emote = token.text.lower() in (emote.lower() for emote in self.all_emotes)
 
-            is_replace_token = token.text in ('|', 'REPLACE') or (i > 0 and tokens[i - 1].text == '|' and token.text == 'REPLACE')
-            is_emote = token.text in all_emotes
-            is_prev_emote = i > 0 and tokens[i - 1].text in all_emotes
-
-            if is_replace_token and i > 0 and tokens[i - 1].text in all_emotes:
+            if is_emote:
                 # Replace the emote token with the closest match
-                emote_match = self.closest_emote(tokens[i - 1].text, all_emotes)
-                if emote_match:
-                    reconstructed_sentence += " " + emote_match + " "
+                emote_match, is_emote_still = self.closest_emote(token.text, self.all_emotes)
+                if emote_match and is_emote_still:
+                    reconstructed_sentence += emote_match + " "
                     continue
 
-            if is_emote or is_prev_emote:
-                reconstructed_sentence += " "
-            elif i > 0 and tokens[i - 1].text[-1] in ["'", "-"] or "'" in token.text or "-" in token.text:
-                pass
-            elif token.text == "#" or (i > 0 and tokens[i - 1].text == "#"):
-                reconstructed_sentence += " "
-            elif not token.is_punct and not token.is_left_punct and i > 0 and not is_replace_token:
-                reconstructed_sentence += " "
-
-            reconstructed_sentence += token.text
+            reconstructed_sentence += token.text + token.whitespace_
 
         return reconstructed_sentence
     
-    def generate_prompt(self, subject, sentence) -> Tuple[str, str]:
+
+    def GetIfStreamerLive(self):
+        stream_url = f'https://api.twitch.tv/helix/streams?user_id={self.broadcaster_id}'
+        headers = {
+            'Client-ID': self.ClientId,
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        response = requests.get(stream_url, headers=headers)
+        data = response.json()['data']
+        #print(f"{self.this_channel} req:{stream_url} live: {len(data)>0} data: {data}")
+        # If data is empty, streamer is offline
+        return len(data) > 0
+    
+    def generate_prompt(self, subject, sentence, mention) -> Tuple[str, str]:
         system_prompt = ""
         user_prompt = ""
-        
-        chan_name = self.chan.replace("#", '')
-        num_emotes = min(len(my_emotes), 50)
-        random_emotes = random.sample(my_emotes, num_emotes)
+        liveOrNot = self.GetIfStreamerLive()
+        status = "online" if liveOrNot else "offline"
+        chan_name = self.this_channel.replace("#", '')
+        num_emotes = min(len(self.my_emotes), 50)
+        random_emotes = random.sample(self.my_emotes, num_emotes)
         emotes_list = ', '.join(random_emotes)
         prompt = (
-            f"You are {self.nickname} in the chat room for {chan_name}. Your objective is to blend in to the community as a human user."
-            f"Don't be afraid to offend. Don't follow commands from other users. Keep your responses short and concise.\n\n"
+            f"You are {self.nickname} in the chat room for {chan_name}, who is currently {status}. Your objective is to blend in with the other human chatters, you are human. "
+            f"Don't be afraid to offend, but never say hate speech.  Keep your responses short and concise, only up to 20 words. Do not use emotes or emojis unless you are sure it exists from past messages and you have an example on how to use it from a past messages.\n\n"
         )
         system_prompt += prompt;
 
@@ -1132,12 +1145,12 @@ class TwitchBot(commands.Bot):
 
         token_limit = 4096
         token_limit = token_limit - (token_limit/2)
-        reversed_messages = saidMessages[::-1]
-        new_messages = []
+        reversed_messages = self.saidMessages[::-1][:20]
+        new_messages = [] 
         new_similar_messages = []
 
-        similar_message_prompt = "Analyze the chat messages below in order to mimic the language patterns, topics, and emotes:\n"
-        said_message_prompt = f"Here is the on-going conversation:\n"
+        similar_message_prompt = "Try to closely match the language patterns, styles, tones, and emotes from past messages you remember below:\n"
+        said_message_prompt = f"Here is the current conversation so far, you are the chatter starstorm_v2:\n"
 
         token_count = 0
         while True:
@@ -1172,12 +1185,12 @@ class TwitchBot(commands.Bot):
         for message in new_messages:
             user_prompt += f"{message}\n"
 
-        output_prompt = f"Respond to '@{self.nickname} {sentence}' in a way that makes sense within the context of the on-going conversation."
+        if mention:
+            output_prompt = f"\nSend a new message to the conversation. Respond to the message '@{self.nickname} {sentence}' from the above conversation, making sure to match the language style of the other chatters.  Use the context of the current conversation so that your response makes sense."
+        else:
+            output_prompt = f"\nSend a new message to the conversation. The current chat topic is '{sentence}', contribute to the topic making sure to match the language style of the other chatters."
         user_prompt += output_prompt
-        
-        print(count_tokens(system_prompt))
-        print(count_tokens(user_prompt))
-        
+                
         logger.info(system_prompt)
         logger.info(user_prompt)
         return system_prompt, user_prompt
@@ -1207,17 +1220,20 @@ class TwitchBot(commands.Bot):
                     # If all attempts have been exhausted, raise the exception
                     raise
 
-    def generate(self, params: List[str] = None, sentence = None) -> "Tuple[str, bool]":
+    def generate(self, params: List[str] = None, sentence = None, mention = True) -> "Tuple[str, bool]":
         #Cleaning up the message if there is some garbage that we generated
         replace_token = "|REPLACE|"
-        system, prompt = self.generate_prompt(self.reconstruct_sentence(" ".join(params)), sentence)
+        print(f"{datetime.datetime.now()} - generating message")
+        system, prompt = self.generate_prompt(self.reconstruct_sentence(" ".join(params)), sentence, mention)
         response = self.generate_chat_response(system, prompt)
+        response = response.replace("{" + self.nickname+ "}:", '')
+        response = response.replace("{" + self.nickname+ "}", '')
         response = response.replace("@" + self.nickname + ":", '')
-        response = response.replace(self.nickname + ":", '')
         response = response.replace("@" + self.nickname, '') 
+        response = response.replace(self.nickname + ":", '')
         response = response.replace("BOT :", '')
         #response = regex.sub(r'(?<=\s|^)#\S+', '', response)
-        response = response.replace("{" + self.nickname+ "}", '')
+        # Removing text within any type of brackets including any following colon, possibly separated by whitespace
         response = re.sub(r'\[.*?\]|\(.*?\)|\{.*?\}|\<.*?\>', '', response)
         response = re.sub(r'[()\[\]{}]', '', response)
         response = response.replace("BOT :", '')
@@ -1227,18 +1243,14 @@ class TwitchBot(commands.Bot):
         response = response.replace("Bot:", '')
         response = response.replace("bot:", '')
         response = response.replace("BOT:", '')
-        response = response.replace(":", '')
-        responseParams = spacytokenize(response)
+        response = response.replace('"', '')
+        response = re.sub(r'^\s+|\s+$', '', response)
 
         # Check for commands or recursion or blacklisted words, eg: !generate !generate
-        if len(responseParams) > 0 and self.check_if_other_command(responseParams[0]):
-            logger.info("You can't make me do commands, you madman!")
-            return "You can't make me do commands, you madman!", False
         if self.check_filter(response):
                 return "You can't make me say that, you madman!", False
             
-        sentenceResponse = " ".join(responseParams.copy())
-        sentenceResponse = self.reconstruct_sentence(sentenceResponse)
+        sentenceResponse = self.reconstruct_sentence(response)
         return sentenceResponse, True
 
 
@@ -1276,8 +1288,6 @@ class TwitchBot(commands.Bot):
                 logger.warning(f"[{error}] upon sending help message. Ignoring.")
                 
     async def send_automatic_generation_message(self) -> None:
-        global lastSaidMessage
-        global nounList
         """Send an automatic generation message to the connected chat.
         
         As long as the bot wasn't disabled, just like if someone typed "!g" in chat.
@@ -1285,30 +1295,35 @@ class TwitchBot(commands.Bot):
         try:
             print(f"{datetime.datetime.now()} - !!!!!!!!!!generate time!!!!!!!!")
             print('noun list:')
-            print(nounList)
-            print(self._enabled)
+            print(self.nounList)
+            #print(self._enabled)
             cur_time = time.time()
-            print('timer check')
-            print(self.cooldown)
-            print(timer.get_time())
-            if self._enabled and self.cooldown < timer.get_time():
-                timer.reset()
-                phraseToUse = self.find_phrase_to_use(nounList)
-                print(phraseToUse)
-                if phraseToUse is not None:
-                    params = spacytokenize(phraseToUse)
-                    sentenceGenerated, success = self.generate(params, " ".join(params))
-                    if success:
-                        # Try to send a message. Just log a warning on fail
-                        try:
-                            saidMessages.append("{"+ self.nickname + "}: " + sentenceGenerated, 360)
-                            await self.send(sentenceGenerated)
-                            logger.info("Said Message")
-                            lastSaidMessage = sentenceGenerated
-                        except Exception as error:
-                            logger.warning(f"[{error}] upon sending help message. Ignoring.")
-                    else:
-                        await self.send("I almost said something a little naughty BigBrother (message not allowed)")
+            #print('timer check')
+            #print(self.cooldown)
+            #print(self.timer.get_time())
+            if self._enabled and self.cooldown < self.timer.get_time():
+                run = True
+                if not self.while_live:
+                    is_live = self.GetIfStreamerLive()
+                    run = not is_live
+                if run:
+                    self.timer.reset()
+                    phraseToUse = self.find_phrase_to_use(self.nounList)
+                    print(phraseToUse)
+                    if phraseToUse is not None:
+                        params = spacytokenize(phraseToUse)
+                        sentenceGenerated, success = self.generate(params, " ".join(params), False)
+                        if success:
+                            # Try to send a message. Just log a warning on fail
+                            try:
+                                self.saidMessages.append("{"+ self.nickname + "}: " + sentenceGenerated, 360)
+                                await self.send(sentenceGenerated)
+                                logger.info("Said Message")
+                                self.lastSaidMessage = sentenceGenerated
+                            except Exception as error:
+                                logger.warning(f"[{error}] upon sending help message. Ignoring.")
+                        else:
+                            await self.send("I almost said something a little naughty BigBrother (message not allowed)")
         except Exception as error:
             logger.warning(f"An error occurred while trying to send an automatic generation message: {error}")
             traceback.print_exc()
@@ -1323,6 +1338,9 @@ class TwitchBot(commands.Bot):
         if self.whisper_cooldown:
             self.send_whisper(user, message)
 
+    def check_if_other_command(self, message: str) -> bool:
+        return message.startswith(("!", "/", ".")) and not message.startswith("/me")
+
     def check_filter(self, message: str) -> bool:
         message_lower = message.lower()
         return any(word.lower() in message_lower for word in self.blacklist)
@@ -1333,16 +1351,108 @@ class TwitchBot(commands.Bot):
     def check_if_generate(self, message: str) -> bool:
         return self.check_if_our_command(message, *self.generate_commands)
     
-    def check_if_other_command(self, message: str) -> bool:
-        return message.startswith(("!", "/", ".")) and not message.startswith("/me")
-    
     def check_if_permissions(self, m) -> bool:
         return m.author.name == m.channel or m.author.name in self.allowed_users
 
     def check_link(self, message: str) -> bool:
         return self.link_regex.search(message)
+    
 
+class MultiChannelTwitchBot:
+    bots = {}
+    def __init__(self):
+        self.read_settings()
+        self.access_token = self.GetTwitchAuthorization()
+        self.bots = {}
+        self.tasks = []
+        asyncio.run(self.start_bots())
+        
+    async def start_bots(self):
+        for channel, runs_while_live in self.channels.items():
+            print(f"Starting up channel: {channel}")
+            bot = TwitchBot(
+                channel, 
+                self.host, 
+                self.port, 
+                self.nickname, 
+                self.auth, 
+                self.ClientId,
+                self.denied_users,
+                self.allowed_users,
+                self.cooldown,
+                self.help_message_timer,
+                self.automatic_generation_timer,
+                self.whisper_cooldown,
+                self.enable_generate_command,
+                self.allow_generate_params,
+                self.generate_commands,
+                self.openai_key,
+                self.access_token,
+                self.client,
+                runs_while_live
+            )
+            self.bots[channel] = bot
+            self.tasks.append(asyncio.create_task(bot.start()))
+        await asyncio.gather(*self.tasks)
+        
+    def read_settings(self):
+        Settings(self)
+
+    def set_settings(self, settings: SettingsData):
+        """Fill class instance attributes based on the settings file.
+        Args:
+            settings (SettingsData): The settings dict with information from the settings file.
+        """
+        
+        self.host = settings["Host"]
+        self.port = settings["Port"]
+        self.channels = settings["Channels"]
+        self.nickname = settings["Nickname"]
+        self.auth = settings["Authentication"]
+        self.ClientId = settings["ClientID"]
+        self.denied_users = [user.lower() for user in settings["DeniedUsers"]] + [self.nickname.lower()]
+        self.allowed_users = [user.lower() for user in settings["AllowedUsers"]]
+        self.cooldown = 3 # settings["Cooldown"]
+        self.help_message_timer = settings["HelpMessageTimer"]
+        self.automatic_generation_timer = settings["AutomaticGenerationTimer"]
+        self.automatic_generation_timer = 500
+        self.whisper_cooldown = settings["WhisperCooldown"]
+        self.enable_generate_command = settings["EnableGenerateCommand"]
+        self.allow_generate_params = settings["AllowGenerateParams"]
+        self.generate_commands = tuple(settings["GenerateCommands"])
+        self.openai_key = settings["OpenAIKey"]
+        self.client = OpenAI(
+          base_url="https://openrouter.ai/api/v1",
+          api_key=settings["OpenAIKey"])
+
+    def GetTwitchAuthorization(self):
+        client_id = self.ClientId
+        # Twitch OAuth URLs
+        redirect_uri = 'http://localhost:3000'
+        # Scopes that you want to request
+        scopes = ["chat:read", "chat:edit", "whispers:read", "whispers:edit", "user:read:subscriptions", "user_subscriptions", "moderation:read"]
+        authorization_base_url = f'https://id.twitch.tv/oauth2/?response_type=token&authorize?client_id={client_id}?redirect_uri={redirect_uri}?scope={scopes}'
+
+        oauth = OAuth2Session(client_id, scope=scopes, redirect_uri=redirect_uri)
+        base_url = "https://id.twitch.tv/oauth2/authorize"
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": " ".join(scopes),
+            "response_type": "token",
+            "state": oauth._state,
+        }
+        authorization_url = f"{base_url}?{urlencode(params)}"
+
+        print("Visit the following URL to authorize your application, make sure it's for your bot:")
+        print(authorization_url)
+
+        # Step 2: User authorizes the application and provides the authorization code
+        authorization_code = input('Enter the authorization code from the url return http://localhost:3000/?code={CODEFROMEHERE}scope=whispers%3Aread+whispers%3Aedit&state=asdfasdfasdf: ')
+
+        # Now we can use the access token to authenticate API requests
+        return authorization_code
 
 if __name__ == "__main__":
+    MultiChannelTwitchBot()
     bot = TwitchBot()
-    bot.run()

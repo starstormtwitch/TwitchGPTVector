@@ -8,9 +8,12 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class SettingsData(TypedDict):
-    Channels: str
+    Host: str
+    Port: int
+    Channels: dict[str, bool]
+    Nickname: str
+    Authentication: str
     ClientID: str
-    ClientSecret: str
     OpenAIKey: str
     DeniedUsers: List[str]
     AllowedUsers: List[str]
@@ -26,10 +29,13 @@ class Settings:
     PATH = os.path.join(os.getcwd(), "settings.json")
     
     DEFAULTS: SettingsData = {
-        "Channels": ["#StarStorm"],
-        "ClientID": "EXAMPLE",#  go to https://dev.twitch.tv/console/apps/create and create an app for your own bot
-        "ClientSecret": "EXAMPLE",# same as above
-        "OpenAIKey": "put your openai auth here, must sign up for account https://openai.com/blog/openai-api",
+        "Host": "irc.chat.twitch.tv",
+        "Port": 6667,
+        "Channels": {"#StarStorm": True},
+        "Nickname": "StarStorm_v2",
+        "Authentication": "{put your oauth here}",
+        "ClientID": "{go to https://dev.twitch.tv/console/apps/create and create an app}",
+        "OpenAIKey": "{put your openai auth here}",
         "DeniedUsers": ["StreamElements", "Nightbot", "Moobot", "Marbiebot"],
         "AllowedUsers": ["StarStorm"],
         "Cooldown": 15,
@@ -196,4 +202,4 @@ class Settings:
                 Each channel is stripped of "#" and converted to lowercase.
         """
         settings = Settings.read_settings()
-        return [channel.replace("#", "").lower() for channel in settings["Channels"]]
+        return [channel.replace("#", "").lower() for channel in settings["Channels"].keys()]
